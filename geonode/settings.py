@@ -50,6 +50,9 @@ DEBUG = strtobool(os.getenv('DEBUG', 'True'))
 # otherwise it will raise errors for the missing non-minified dependencies
 DEBUG_STATIC = strtobool(os.getenv('DEBUG_STATIC', 'False'))
 
+#Define email service on GeoNode
+EMAIL_ENABLE = strtobool(os.getenv('EMAIL_ENABLE', 'True')) 
+
 # This is needed for integration tests, they require
 # geonode to be listening for GeoServer auth requests.
 os.environ['DJANGO_LIVE_TEST_SERVER_ADDRESS'] = 'localhost:8000'
@@ -263,23 +266,24 @@ GEONODE_APPS = (
     'geonode.geoserver',
     'geonode.upload',
     'geonode.tasks',
+    'geonode.messaging'
 
 )
 
 GEONODE_CONTRIB_APPS = (
     # GeoNode Contrib Apps
-    'geonode.contrib.dynamic',
-    'geonode.contrib.exif',
-    'geonode.contrib.favorite',
-    'geonode.contrib.geogig',
-    'geonode.contrib.geosites',
-    'geonode.contrib.nlp',
-    'geonode.contrib.slack',
-    'geonode.contrib.metadataxsl'
+    # 'geonode.contrib.dynamic',
+    # 'geonode.contrib.exif',
+    # 'geonode.contrib.favorite',
+    # 'geonode.contrib.geogig',
+    # 'geonode.contrib.geosites',
+    # 'geonode.contrib.nlp',
+    # 'geonode.contrib.slack',
+    'geonode.contrib.metadataxsl',
 )
 
 # Uncomment the following line to enable contrib apps
-# GEONODE_APPS = GEONODE_APPS + GEONODE_CONTRIB_APPS
+GEONODE_APPS = GEONODE_APPS + GEONODE_CONTRIB_APPS
 
 INSTALLED_APPS = (
 
@@ -317,7 +321,9 @@ INSTALLED_APPS = (
     'mptt',
     # 'modeltranslation',
     'djcelery',
+    'djkombu',
     'storages',
+    'floppyforms',
 
     # Theme
     "pinax_theme_bootstrap_account",
@@ -329,7 +335,7 @@ INSTALLED_APPS = (
     'avatar',
     'dialogos',
     'agon_ratings',
-    # 'notification',
+    'notification',
     'announcements',
     'actstream',
     'user_messages',
@@ -337,7 +343,6 @@ INSTALLED_APPS = (
     'polymorphic',
     'guardian',
     'oauth2_provider',
-
 ) + GEONODE_APPS
 
 LOGGING = {
@@ -952,7 +957,6 @@ SEARCH_FILTERS = {
 
 # Queue non-blocking notifications.
 NOTIFICATION_QUEUE_ALL = False
-
 BROKER_URL = os.getenv('BROKER_URL', "django://")
 CELERY_ALWAYS_EAGER = True
 CELERY_EAGER_PROPAGATES_EXCEPTIONS = True
@@ -1063,4 +1067,9 @@ if 'geonode.geoserver' in INSTALLED_APPS:
 # e.g. THESAURI = [{'name':'inspire_themes', 'required':True, 'filter':True}, {'name':'inspire_concepts', 'filter':True}, ]
 # Required: (boolean, optional, default false) mandatory while editing metadata (not implemented yet)
 # Filter: (boolean, optional, default false) a filter option on that thesaurus will appear in the main search page
+# THESAURI = [{'name':'inspire_themes', 'required':False, 'filter':True}]
 THESAURI = []
+
+if EMAIL_ENABLE:
+    #Setting up email backend 
+    EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'

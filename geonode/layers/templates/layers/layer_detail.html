@@ -243,7 +243,7 @@
     <ul class="list-group">
       {% if resource.storeType != "remoteStore" %}
         <li class="list-group-item">
-        {% if links or links_download %}
+        {% if links_download %}
            <button class="btn btn-primary btn-md btn-block" data-toggle="modal" data-target="#download-layer">{% trans "Download Layer" %}</button>
         {% else %}
           {% if request.user.is_authenticated %}
@@ -329,7 +329,9 @@
               <div class="col-sm-3">
                 <i class="fa fa-list-alt fa-3x"></i>
                 <h4>{% trans "Metadata" %}</h4>
-                <a class="btn btn-default btn-block btn-xs" href="{% url "layer_metadata" resource.service_typename %}">{% trans "Edit" %}</a>
+                <a class="btn btn-default btn-block btn-xs" href="{% url "layer_metadata" resource.service_typename %}">{% trans "Wizard" %}</a>
+                <a class="btn btn-default btn-block btn-xs" href="{% url "layer_metadata_advanced" resource.service_typename %}">{% trans "Advanced Edit" %}</a>
+                <a class="btn btn-default btn-block btn-xs" href="{% url "layer_metadata_upload" resource.service_typename %}">{% trans "Upload Metadata" %}</a>
               </div>
               {% endif %}
               {% if GEOSERVER_BASE_URL and not resource.service %}
@@ -520,6 +522,7 @@
 {% endblock %}
 
 {% block extra_script %}
+{{ block.super }}
 
     {% if GEOGIG_ENABLED and resource.link_set.geogig %}
         {% with "_geogig_scripts.html" as geogig_scripts_template %}
