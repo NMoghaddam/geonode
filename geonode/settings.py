@@ -51,7 +51,7 @@ DEBUG = strtobool(os.getenv('DEBUG', 'True'))
 DEBUG_STATIC = strtobool(os.getenv('DEBUG_STATIC', 'False'))
 
 #Define email service on GeoNode
-EMAIL_ENABLE = strtobool(os.getenv('EMAIL_ENABLE', 'True')) 
+EMAIL_ENABLE = strtobool(os.getenv('EMAIL_ENABLE', 'True'))
 
 # This is needed for integration tests, they require
 # geonode to be listening for GeoServer auth requests.
@@ -573,8 +573,17 @@ CACHE_TIME = int(os.getenv('CACHE_TIME', '0'))
 GEOSERVER_LOCATION = os.getenv(
     'GEOSERVER_LOCATION', 'http://localhost:8080/geoserver/'
 )
+
 GEOSERVER_PUBLIC_LOCATION = os.getenv(
     'GEOSERVER_PUBLIC_LOCATION', 'http://localhost:8080/geoserver/'
+)
+
+OGC_SERVER_DEFAULT_USER = os.getenv(
+    'GEOSERVER_ADMIN_USER', 'admin'
+)
+
+OGC_SERVER_DEFAULT_PASSWORD = os.getenv(
+    'GEOSERVER_ADMIN_PASSWORD', 'geoserver'
 )
 
 # OGC (WMS/WFS/WCS) Server Settings
@@ -589,8 +598,8 @@ OGC_SERVER = {
         # the proxy won't work and the integration tests will fail
         # the entire block has to be overridden in the local_settings
         'PUBLIC_LOCATION': GEOSERVER_PUBLIC_LOCATION,
-        'USER': 'admin',
-        'PASSWORD': 'geoserver',
+        'USER': OGC_SERVER_DEFAULT_USER,
+        'PASSWORD': OGC_SERVER_DEFAULT_PASSWORD,
         'MAPFISH_PRINT_ENABLED': True,
         'PRINT_NG_ENABLED': True,
         'GEONODE_SECURITY_ENABLED': True,
@@ -731,7 +740,9 @@ MAP_BASELAYERS = [{
     "group": "background"
 }]
 
-SOCIAL_BUTTONS = True
+DISPLAY_SOCIAL = strtobool(os.getenv('DISPLAY_SOCIAL', 'True'))
+DISPLAY_COMMENTS = strtobool(os.getenv('DISPLAY_COMMENTS', 'True'))
+DISPLAY_RATINGS = strtobool(os.getenv('DISPLAY_RATINGS', 'True'))
 
 SOCIAL_ORIGINS = [{
     "label": "Email",
@@ -1071,5 +1082,5 @@ if 'geonode.geoserver' in INSTALLED_APPS:
 THESAURI = []
 
 if EMAIL_ENABLE:
-    #Setting up email backend 
+    #Setting up email backend
     EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
