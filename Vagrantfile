@@ -43,6 +43,10 @@ Vagrant.configure("2") do |config|
   # backing providers for Vagrant. These expose provider-specific options.
   # Example for VirtualBox:
   #
+  config.vm.hostname = "geonode"
+
+  config.vm.synced_folder "tempdata/", "/data"
+  
   config.vm.provider "virtualbox" do |vb|
   #   # Display the VirtualBox GUI when booting the machine
   #   vb.gui = true
@@ -71,5 +75,6 @@ Vagrant.configure("2") do |config|
      apt-get -y dist-upgrade
      apt-get install -y geonode
      apt-get -y clean
+     apt-get -y autoremove
    SHELL
 end
