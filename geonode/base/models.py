@@ -570,6 +570,8 @@ class ResourceBase(PolymorphicModel, PermissionLevelMixin, ItemBase):
     @property
     def license_light(self):
         a = []
+        if not self.license:
+            return ''
         if (not (self.license.name is None)) and (len(self.license.name) > 0):
             a.append(self.license.name)
         if (not (self.license.url is None)) and (len(self.license.url) > 0):
@@ -1141,8 +1143,9 @@ def do_logout(sender, user, request, **kwargs):
         try:
             urllib2.urlopen(gs_request)
         except:
-            traceback.print_exc()
-            pass
+            tb = traceback.format_exc()
+            if tb:
+                logger.debug(tb)
 
         if 'access_token' in request.session:
             del request.session['access_token']

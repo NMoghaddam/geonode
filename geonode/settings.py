@@ -20,6 +20,7 @@
 
 # Django settings for the GeoNode project.
 import os
+import sys
 import re
 
 from kombu import Queue
@@ -268,7 +269,6 @@ GEONODE_APPS = (
     'geonode.geoserver',
     'geonode.upload',
     'geonode.tasks',
-    'geonode.messaging'
 
 )
 
@@ -285,7 +285,7 @@ GEONODE_CONTRIB_APPS = (
 )
 
 # Uncomment the following line to enable contrib apps
-GEONODE_APPS = GEONODE_APPS + GEONODE_CONTRIB_APPS
+GEONODE_APPS = GEONODE_CONTRIB_APPS + GEONODE_APPS
 
 INSTALLED_APPS = (
 
@@ -322,13 +322,14 @@ INSTALLED_APPS = (
     'autocomplete_light',
     'mptt',
     # 'modeltranslation',
+    # 'djkombu',
     'djcelery',
-    'djkombu',
+    'kombu.transport.django',
+
     'storages',
     'floppyforms',
 
     # Theme
-    "pinax_theme_bootstrap_account",
     "pinax_theme_bootstrap",
     'django_forms_bootstrap',
 
@@ -337,7 +338,7 @@ INSTALLED_APPS = (
     'avatar',
     'dialogos',
     'agon_ratings',
-    'notification',
+    # 'notification',
     'announcements',
     'actstream',
     'user_messages',
@@ -543,6 +544,8 @@ THEME_ACCOUNT_CONTACT_EMAIL = os.getenv(
 # some problematic 3rd party apps
 TEST_RUNNER = 'django_nose.NoseTestSuiteRunner'
 
+
+TEST = 'test' in sys.argv
 # Arguments for the test runner
 NOSE_ARGS = [
     '--nocapture',
@@ -970,6 +973,7 @@ SEARCH_FILTERS = {
 
 # Queue non-blocking notifications.
 NOTIFICATION_QUEUE_ALL = False
+
 BROKER_URL = os.getenv('BROKER_URL', "django://")
 CELERY_ALWAYS_EAGER = True
 CELERY_EAGER_PROPAGATES_EXCEPTIONS = True
@@ -1024,6 +1028,12 @@ if S3_MEDIA_ENABLED:
     DEFAULT_FILE_STORAGE = 'storages.backends.s3boto.S3BotoStorage'
     MEDIA_URL = "https://%s/%s/" % (AWS_S3_BUCKET_DOMAIN, MEDIAFILES_LOCATION)
 
+# pinax.notifications
+# or notification
+NOTIFICATIONS_MODULE = 'pinax.notifications'
+
+if TEST:
+    INSTALLED_APPS += (NOTIFICATIONS_MODULE, )
 
 djcelery.setup_loader()
 
@@ -1086,6 +1096,11 @@ GEONODE_PUBSUB = False
 # THESAURI = [{'name':'inspire_themes', 'required':False, 'filter':True}]
 THESAURI = []
 
+# use when geonode.contrib.risks is in installed apps.
+RISKS = {'DEFAULT_LOCATION': None,
+         'PDF_GENERATOR': {'NAME': 'wkhtml2pdf',
+                           'BIN': '/usr/bin/wkhtml2pdf',
+                           'ARGS': []}}
 if EMAIL_ENABLE:
     #Setting up email backend
     EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
