@@ -42,8 +42,11 @@ from django.utils.encoding import (
 from bootstrap3_datetime.widgets import DateTimePicker
 from modeltranslation.forms import TranslationModelForm
 
-from geonode.base.models import TopicCategory, Region
+from geonode.base.models import TopicCategory, Region, License
 from geonode.people.models import Profile
+from geonode.base.enumerations import ALL_LANGUAGES
+from django.contrib.auth.models import Group
+from django.contrib.auth import get_user_model
 
 
 def get_tree_data():
@@ -384,3 +387,28 @@ class ValuesListField(forms.Field):
         self.validate(value)
         self.run_validators(value)
         return value
+
+
+class BatchEditForm(forms.Form):
+    LANGUAGES = (('', '--------'),) + ALL_LANGUAGES
+    group = forms.ModelChoiceField(
+        queryset=Group.objects.all(),
+        required=False)
+    owner = forms.ModelChoiceField(
+        queryset=get_user_model().objects.all(),
+        required=False)
+    category = forms.ModelChoiceField(
+        queryset=TopicCategory.objects.all(),
+        required=False)
+    license = forms.ModelChoiceField(
+        queryset=License.objects.all(),
+        required=False)
+    regions = forms.ModelChoiceField(
+        queryset=Region.objects.all(),
+        required=False)
+    date = forms.DateTimeField(required=False)
+    language = forms.ChoiceField(
+        required=False,
+        choices=LANGUAGES,
+    )
+    keywords = forms.CharField(required=False)

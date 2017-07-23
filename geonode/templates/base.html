@@ -87,6 +87,7 @@
               <ul class="dropdown-menu">
                 <li><a href="{% url "profile_browse" %}">{% trans "People" %}</a></li>
                 <li><a href="{% url "group_list" %}">{% trans "Groups" %}</a></li>
+                <li><a href="{% url "group_category_list" %}">{% trans "Group Categories" %}</a></li>
                 {% if perms.announcements.can_manage %}
                 <li><a href="{% url "announcements_list" %}">{% trans "Announcements" %}</a></li>
                 {% endif %}
@@ -115,7 +116,7 @@
                 </form>
               </div>
 	        </li>
-            {% if not user.is_authenticated and REGISTRATION_OPEN %}
+            {% if not user.is_authenticated and ACCOUNT_OPEN_SIGNUP %}
             <li><a href="{% url "account_signup" %}">{% trans "Register" %}</a></li>
             {% endif %}
             {% if user.is_authenticated %}
@@ -141,7 +142,7 @@
                 <li><a href="{{ GEOSERVER_BASE_URL }}">GeoServer</a></li>
                 {% endif %}
                 <li role="separator" class="divider"></li>
-                <li><a href="{% url "help" %}">{% trans "Help" %}</li>
+                <li><a href="{% url "help" %}">{% trans "Help" %}</a></li>
                 <li role="separator" class="divider"></li>
                 <li><a href="/account/logout/">Logout</a></li>
                 </ul>

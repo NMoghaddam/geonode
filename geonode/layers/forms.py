@@ -48,7 +48,6 @@ class JSONField(forms.CharField):
 
 
 class LayerForm(ResourceBaseForm):
-
     class Meta(ResourceBaseForm.Meta):
         model = Layer
         exclude = ResourceBaseForm.Meta.exclude + (
@@ -80,6 +79,7 @@ class LayerForm(ResourceBaseForm):
                         'data-html': 'true'
                     }
                 )
+
 
 class LayerUploadForm(forms.Form):
     base_file = forms.FileField()
@@ -134,10 +134,11 @@ class LayerUploadForm(forms.Form):
             if cleaned["xml_file"] is not None:
                 xml_file = cleaned["xml_file"].name
 
-        if not cleaned["metadata_upload_form"] and base_ext.lower() not in (".shp", ".tif", ".tiff", ".geotif", ".geotiff"):
+        if not cleaned["metadata_upload_form"] and base_ext.lower() not in (
+                ".shp", ".tif", ".tiff", ".geotif", ".geotiff", ".asc"):
             raise forms.ValidationError(
-                "Only Shapefiles and GeoTiffs are supported. You uploaded a %s file" %
-                base_ext)
+                "Only Shapefiles, GeoTiffs, and ASCIIs are supported. You "
+                "uploaded a %s file" % base_ext)
         elif cleaned["metadata_upload_form"] and base_ext.lower() not in (".xml"):
             raise forms.ValidationError(
                 "Only XML files are supported. You uploaded a %s file" %

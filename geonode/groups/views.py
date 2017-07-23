@@ -26,11 +26,33 @@ from django.template import RequestContext
 from django.views.decorators.http import require_POST
 from django.contrib.auth.decorators import login_required
 from django.views.generic import ListView
+from django.views.generic.edit import CreateView, UpdateView
+from django.views.generic.detail import DetailView
 
 from actstream.models import Action
 
 from geonode.groups.forms import GroupInviteForm, GroupForm, GroupUpdateForm, GroupMemberForm
-from geonode.groups.models import GroupProfile, GroupInvitation, GroupMember
+from geonode.groups.models import GroupProfile, GroupInvitation, GroupMember, GroupCategory
+
+
+class GroupCategoryCreateView(CreateView):
+    model = GroupCategory
+    fields = ['name', 'description']
+
+
+class GroupCategoryDetailView(DetailView):
+    model = GroupCategory
+
+
+class GroupCategoryUpdateView(UpdateView):
+    model = GroupCategory
+    fields = ['name', 'description']
+    template_name_suffix = '_update_form'
+
+
+group_category_create = GroupCategoryCreateView.as_view()
+group_category_detail = GroupCategoryDetailView.as_view()
+group_category_update = GroupCategoryUpdateView.as_view()
 
 
 @login_required
@@ -269,20 +291,34 @@ class GroupActivityView(ListView):
         return super(GroupActivityView, self).get(request, *args, **kwargs)
 
     def get_context_data(self, **kwargs):
+        def getKey(action):
+            return action.timestamp
+
         context = super(GroupActivityView, self).get_context_data(**kwargs)
         context['group'] = self.group
-        # Additional Filtered Lists Below
         members = ([(member.user.id) for member in self.group.member_queryset()])
-        context['action_list_layers'] = Action.objects.filter(
+        # Additional Filtered Lists Below
+        action_list = []
+        actions = Action.objects.filter(
             public=True,
-            actor_object_id__in=members,
-            action_object_content_type__model='layer')[:15]
-        context['action_list_maps'] = Action.objects.filter(
+            action_object_content_type__model='layer')
+        context['action_list_layers'] = [
+            action
+            for action in actions
+            if action.action_object.group == self.group.group][:15]
+        action_list.extend(context['action_list_layers'])
+        actions = Action.objects.filter(
             public=True,
-            actor_object_id__in=members,
             action_object_content_type__model='map')[:15]
+        context['action_list_maps'] = [
+            action
+            for action in actions
+            if action.action_object.group == self.group.group][:15]
+        action_list.extend(context['action_list_maps'])
         context['action_list_comments'] = Action.objects.filter(
             public=True,
             actor_object_id__in=members,
             action_object_content_type__model='comment')[:15]
+        action_list.extend(context['action_list_comments'])
+        context['action_list'] = sorted(action_list, key=getKey, reverse=True)
         return context

@@ -385,7 +385,9 @@ def geoserver_post_save(instance, sender, **kwargs):
     elif instance.storeType == 'coverageStore':
 
         links = wcs_links(ogc_server_settings.public_url + 'wcs?',
-                          instance.typename.encode('utf-8'))
+                          instance.typename.encode('utf-8'),
+                          ','.join(str(x) for x in instance.bbox[0:4]),
+                          instance.srid)
 
     for ext, name, mime, wcs_url in links:
         Link.objects.get_or_create(resource=instance.resourcebase_ptr,
@@ -437,6 +439,7 @@ def geoserver_post_save(instance, sender, **kwargs):
                                )
                                )
 
+    logger.info("Creating Thumbnail for Layer [%s]" % (instance.typename))
     create_gs_thumbnail(instance, overwrite=False)
 
     legend_url = ogc_server_settings.PUBLIC_LOCATION + \

@@ -34,14 +34,14 @@ from urlparse import urljoin, urlsplit
 
 from django.db import models
 from django.core import serializers
-from django.db.models import Q
+from django.db.models import Q, signals
 from django.utils.translation import ugettext_lazy as _
 from django.core.exceptions import ValidationError
 from django.conf import settings
 from django.contrib.staticfiles.templatetags import staticfiles
 from django.contrib.contenttypes.models import ContentType
 from django.contrib.auth import get_user_model
-from django.db.models import signals
+from django.contrib.auth.models import Group
 from django.contrib.auth.signals import user_logged_in, user_logged_out
 from django.core.files.storage import default_storage as storage
 from django.core.files.base import ContentFile
@@ -171,7 +171,7 @@ class Region(MPTTModel):
 
     @property
     def bbox(self):
-        return [self.bbox_x0, self.bbox_y0, self.bbox_x1, self.bbox_y1, self.srid]
+        return [self.bbox_x0, self.bbox_x1, self.bbox_y0, self.bbox_y1, self.srid]
 
     @property
     def bbox_string(self):
@@ -467,7 +467,7 @@ class ResourceBase(PolymorphicModel, PermissionLevelMixin, ItemBase):
 
     keywords = TaggableManager(_('keywords'), through=TaggedContentItem, blank=True, help_text=keywords_help_text,
                                manager=_HierarchicalTagManager)
-    tkeywords = models.ManyToManyField(ThesaurusKeyword, help_text=tkeywords_help_text, blank=True, null=True)
+    tkeywords = models.ManyToManyField(ThesaurusKeyword, help_text=tkeywords_help_text, blank=True)
     regions = models.ManyToManyField(Region, verbose_name=_('keywords region'), blank=True,
                                      help_text=regions_help_text)
 
@@ -504,6 +504,8 @@ class ResourceBase(PolymorphicModel, PermissionLevelMixin, ItemBase):
     # Section 8
     data_quality_statement = models.TextField(_('data quality statement'), blank=True, null=True,
                                               help_text=data_quality_statement_help_text)
+
+    group = models.ForeignKey(Group, null=True, blank=True)
 
     # Section 9
     # see metadata_author property definition below
@@ -557,7 +559,7 @@ class ResourceBase(PolymorphicModel, PermissionLevelMixin, ItemBase):
 
     @property
     def bbox(self):
-        return [self.bbox_x0, self.bbox_y0, self.bbox_x1, self.bbox_y1, self.srid]
+        return [self.bbox_x0, self.bbox_x1, self.bbox_y0, self.bbox_y1, self.srid]
 
     @property
     def bbox_string(self):
@@ -588,6 +590,36 @@ class ResourceBase(PolymorphicModel, PermissionLevelMixin, ItemBase):
         if (not (self.license.url is None)) and (len(self.license.url) > 0):
                 a.append("("+self.license.url+")")
         return " ".join(a)
+
+    @property
+    def metadata_completeness(self):
+        required_fields = [
+            'abstract',
+            'category',
+            'data_quality_statement',
+            'date',
+            'date_type',
+            'language',
+            'license',
+            'regions',
+            'title']
+        if self.restriction_code_type == 'otherRestrictions':
+            required_fields.append('constraints_other')
+        filled_fields = []
+        for required_field in required_fields:
+            field = getattr(self, required_field, None)
+            if field:
+                if required_field is 'license':
+                    if field.name is 'Not Specified':
+                        continue
+                if required_field is 'regions':
+                    if not field.all():
+                        continue
+                if required_field is 'category':
+                    if not field.identifier:
+                        continue
+                filled_fields.append(field)
+        return '{}%'.format(len(filled_fields) * 100 / len(required_fields))
 
     def keyword_list(self):
         return [kw.name for kw in self.keywords.all()]
@@ -673,7 +705,7 @@ class ResourceBase(PolymorphicModel, PermissionLevelMixin, ItemBase):
         """
         self.set_latlon_bounds(bbox)
 
-        minx, miny, maxx, maxy = [float(c) for c in bbox]
+        minx, maxx, miny, maxy = [float(c) for c in bbox]
         x = (minx + maxx) / 2
         y = (miny + maxy) / 2
         (center_x, center_y) = forward_mercator((x, y))

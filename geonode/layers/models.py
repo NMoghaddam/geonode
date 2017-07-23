@@ -44,7 +44,7 @@ csv_exts = ['.csv']
 kml_exts = ['.kml']
 vec_exts = shp_exts + csv_exts + kml_exts
 
-cov_exts = ['.tif', '.tiff', '.geotiff', '.geotif']
+cov_exts = ['.tif', '.tiff', '.geotiff', '.geotif', '.asc']
 
 TIME_REGEX = (
     ('[0-9]{8}', _('YYYYMMDD')),
@@ -78,7 +78,16 @@ class Style(models.Model):
         return "%s" % self.name.encode('utf-8')
 
     def absolute_url(self):
-        return self.sld_url.split(settings.OGC_SERVER['default']['LOCATION'], 1)[1]
+        if self.sld_url:
+            if self.sld_url.startswith(settings.OGC_SERVER['default']['LOCATION']):
+                return self.sld_url.split(settings.OGC_SERVER['default']['LOCATION'], 1)[1]
+            elif self.sld_url.startswith(settings.OGC_SERVER['default']['PUBLIC_LOCATION']):
+                return self.sld_url.split(settings.OGC_SERVER['default']['PUBLIC_LOCATION'], 1)[1]
+
+            return self.sld_url
+        else:
+            logger.error("SLD URL is empty for Style %s" % self.name.encode('utf-8'))
+            return None
 
 
 class LayerManager(ResourceBaseManager):
@@ -207,7 +216,7 @@ class Layer(ResourceBase):
         if base_files_count == 0:
             return None, None
 
-        msg = 'There should only be one main file (.shp or .geotiff), found %s' % base_files_count
+        msg = 'There should only be one main file (.shp or .geotiff or .asc), found %s' % base_files_count
         assert base_files_count == 1, msg
 
         # we need to check, for shapefile, if column names are valid

@@ -82,7 +82,8 @@ setup(name='GeoNode',
         "django-downloadview>=1.2",  # python-django-downloadview (1.8)
         "django-polymorphic>=0.9.2",  # python-django-polymorphic (0.8.1) FIXME
         "django-tastypie>=0.12.2",  # python-django-tastypie (0.12.0, 0.12.2 in our ppa)
-        "django-oauth-toolkit>=0.10.0",  # python-django-oauth-toolkit (0.10.0)
+        "django-oauth-toolkit>=0.10.0, <1.0",  # python-django-oauth-toolkit (0.10.0)
+        "oauthlib==2.0.1",
 
         # geopython dependencies
         "pyproj>=1.9.3",  # python-pyproj (1.9.5)
@@ -105,8 +106,8 @@ setup(name='GeoNode',
         "django-modeltranslation>=0.11",  # python-django-modeltranslation (0.11 Debian)
 
         # GeoNode org maintained apps.
-        "django-geoexplorer>=4.0.5",
-        "geonode-user-messages>=0.1.4",  # (0.1.3 in ppa) FIXME
+        "django-geoexplorer>=4.0.9",
+        "geonode-user-messages==0.1.6",  # (0.1.3 in ppa) FIXME
         "geonode-avatar>=2.1.6",  # (2.1.5 in ppa) FIXME
         "geonode-announcements>=1.0.8",
         "geonode-agon-ratings>=0.3.5",  # (0.3.1 in ppa) FIXME

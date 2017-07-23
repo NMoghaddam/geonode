@@ -20,7 +20,9 @@
 
 import math
 import logging
+import urlparse
 from guardian.shortcuts import get_perms
+from guardian.utils import get_anonymous_user
 
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import ObjectDoesNotExist
@@ -55,12 +57,14 @@ from geonode.security.views import _perms_info_json
 from geonode.base.forms import CategoryForm
 from geonode.base.models import TopicCategory
 from geonode.tasks.deletion import delete_map
+from geonode.groups.models import GroupProfile
 
 from geonode.documents.models import get_related_documents
 from geonode.people.forms import ProfileForm
 from geonode.utils import num_encode, num_decode
 from geonode.utils import build_social_links
-import urlparse
+from geonode.base.views import batch_modify
+
 
 if 'geonode.geoserver' in settings.INSTALLED_APPS:
     # FIXME: The post service providing the map_status object
@@ -262,8 +266,14 @@ def map_metadata(request, mapid, template='maps/map_metadata.html'):
     config = map_obj.viewer_json(request.user, access_token)
     layers = MapLayer.objects.filter(map=map_obj.id)
 
+    metadata_author_groups = []
+    if request.user.is_superuser:
+        metadata_author_groups = GroupProfile.objects.all()
+    else:
+        metadata_author_groups = metadata_author.group_list_all()
     return render_to_response(template, RequestContext(request, {
         "config": json.dumps(config),
+        "resource": map_obj,
         "map": map_obj,
         "map_form": map_form,
         "poc_form": poc_form,
@@ -272,6 +282,7 @@ def map_metadata(request, mapid, template='maps/map_metadata.html'):
         "layers": layers,
         "preview":  getattr(settings, 'LAYER_PREVIEW_LIBRARY', 'leaflet'),
         "crs":  getattr(settings, 'DEFAULT_MAP_CRS', 'EPSG:900913'),
+        "metadata_author_groups": metadata_author_groups,
     }))
 
 
@@ -584,6 +595,12 @@ def new_map_config(request):
             bbox = None
             map_obj = Map(projection=getattr(settings, 'DEFAULT_MAP_CRS',
                           'EPSG:900913'))
+
+            if request.user.is_authenticated():
+                map_obj.owner = request.user
+            else:
+                map_obj.owner = get_anonymous_user()
+
             layers = []
             for layer_name in params.getlist('layer'):
                 try:
@@ -659,7 +676,7 @@ def new_map_config(request):
                 layers.append(maplayer)
 
             if bbox is not None:
-                minx, miny, maxx, maxy = [float(coord) for coord in bbox]
+                minx, maxx, miny, maxy = [float(coord) for coord in bbox]
                 x = (minx + maxx) / 2
                 y = (miny + maxy) / 2
 
@@ -1019,3 +1036,8 @@ def map_metadata_detail(request, mapid, template='maps/map_metadata_detail.html'
         "resource": map_obj,
         'SITEURL': settings.SITEURL[:-1]
     }))
+
+
+@login_required
+def map_batch_metadata(request, ids):
+    return batch_modify(request, ids, 'Map')

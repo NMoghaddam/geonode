@@ -25,6 +25,7 @@ import zipfile
 import StringIO
 import contextlib
 import json
+from datetime import datetime
 
 import gisdata
 from django.test import TestCase
@@ -32,6 +33,7 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from django.forms import ValidationError
 from django.contrib.contenttypes.models import ContentType
 from django.core.urlresolvers import reverse
+from django.contrib.auth.models import Group
 
 from django.db.models import Count
 from django.contrib.auth import get_user_model
@@ -45,7 +47,7 @@ from geonode.layers.models import Layer, Style
 from geonode.layers.utils import layer_type, get_files, get_valid_name, \
     get_valid_layer_name
 from geonode.people.utils import get_valid_user
-from geonode.base.models import TopicCategory
+from geonode.base.models import TopicCategory, License, Region
 from geonode.base.populate_test_data import create_models, all_public
 from geonode.layers.forms import JSONField, LayerUploadForm
 from .populate_layers_data import create_layer_data
@@ -295,6 +297,13 @@ class LayersTest(TestCase):
         files = dict(base_file=SimpleUploadedFile('foo.GEOTIF', ' '))
         self.assertTrue(LayerUploadForm(dict(), files).is_valid())
 
+    def testASCIIValidation(self):
+        files = dict(base_file=SimpleUploadedFile('foo.asc', ' '))
+        self.assertTrue(LayerUploadForm(dict(), files).is_valid())
+
+        files = dict(base_file=SimpleUploadedFile('foo.ASC', ' '))
+        self.assertTrue(LayerUploadForm(dict(), files).is_valid())
+
     def testZipValidation(self):
         the_zip = zipfile.ZipFile('test_upload.zip', 'w')
         in_memory_file = StringIO.StringIO()
@@ -353,6 +362,9 @@ class LayersTest(TestCase):
         self.assertEquals(layer_type('foo.geotiff'), 'raster')
         self.assertEquals(layer_type('foo.GEOTIFF'), 'raster')
         self.assertEquals(layer_type('foo.gEoTiFf'), 'raster')
+        self.assertEquals(layer_type('foo.asc'), 'raster')
+        self.assertEquals(layer_type('foo.ASC'), 'raster')
+        self.assertEquals(layer_type('foo.AsC'), 'raster')
 
         # basically anything else should produce a GeoNodeException
         self.assertRaises(GeoNodeException, lambda: layer_type('foo.gml'))
@@ -751,6 +763,88 @@ class LayersTest(TestCase):
         layer.set_permissions({'users': {user.username: ['change_layer_data']}})
         perms = layer.get_all_level_info()
         self.assertIn('change_layer_data', perms['users'][user])
+
+    def test_batch_edit(self):
+        Model = Layer
+        view = 'layer_batch_metadata'
+        resources = Model.objects.all()[:3]
+        ids = ','.join([str(element.pk) for element in resources])
+        # test non-admin access
+        self.client.login(username="bobby", password="bob")
+        response = self.client.get(reverse(view, args=(ids,)))
+        self.assertEquals(response.status_code, 401)
+        # test group change
+        group = Group.objects.first()
+        self.client.login(username='admin', password='admin')
+        response = self.client.post(
+            reverse(view, args=(ids,)),
+            data={'group': group.pk},
+        )
+        self.assertEquals(response.status_code, 302)
+        resources = Model.objects.filter(id__in=[r.pk for r in resources])
+        for resource in resources:
+            self.assertEquals(resource.group, group)
+        # test owner change
+        owner = get_user_model().objects.first()
+        response = self.client.post(
+            reverse(view, args=(ids,)),
+            data={'owner': owner.pk},
+        )
+        self.assertEquals(response.status_code, 302)
+        resources = Model.objects.filter(id__in=[r.pk for r in resources])
+        for resource in resources:
+            self.assertEquals(resource.owner, owner)
+        # test license change
+        license = License.objects.first()
+        response = self.client.post(
+            reverse(view, args=(ids,)),
+            data={'license': license.pk},
+        )
+        self.assertEquals(response.status_code, 302)
+        resources = Model.objects.filter(id__in=[r.pk for r in resources])
+        for resource in resources:
+            self.assertEquals(resource.license, license)
+        # test regions change
+        region = Region.objects.first()
+        response = self.client.post(
+            reverse(view, args=(ids,)),
+            data={'region': region.pk},
+        )
+        self.assertEquals(response.status_code, 302)
+        resources = Model.objects.filter(id__in=[r.pk for r in resources])
+        for resource in resources:
+            self.assertTrue(region in resource.regions.all())
+        # test date change
+        date = datetime.now()
+        response = self.client.post(
+            reverse(view, args=(ids,)),
+            data={'date': date},
+        )
+        self.assertEquals(response.status_code, 302)
+        resources = Model.objects.filter(id__in=[r.pk for r in resources])
+        for resource in resources:
+            self.assertEquals(resource.date, date)
+        # test language change
+        language = 'eng'
+        response = self.client.post(
+            reverse(view, args=(ids,)),
+            data={'language': language},
+        )
+        self.assertEquals(response.status_code, 302)
+        resources = Model.objects.filter(id__in=[r.pk for r in resources])
+        for resource in resources:
+            self.assertEquals(resource.language, language)
+        # test keywords change
+        keywords = 'some,thing,new'
+        response = self.client.post(
+            reverse(view, args=(ids,)),
+            data={'keywords': keywords},
+        )
+        self.assertEquals(response.status_code, 302)
+        resources = Model.objects.filter(id__in=[r.pk for r in resources])
+        for resource in resources:
+            for word in resource.keywords.all():
+                self.assertTrue(word.name in keywords.split(','))
 
 
 class UnpublishedObjectTests(TestCase):
