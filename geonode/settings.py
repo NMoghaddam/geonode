@@ -663,6 +663,8 @@ CATALOGUE = {
         # login credentials (for GeoNetwork)
         # 'USER': 'admin',
         # 'PASSWORD': 'admin',
+
+        # 'ALTERNATES_ONLY': True,
     }
 }
 
@@ -849,7 +851,7 @@ HAYSTACK_SEARCH = strtobool(os.getenv('HAYSTACK_SEARCH', 'False'))
 # Avoid permissions prefiltering
 SKIP_PERMS_FILTER = strtobool(os.getenv('SKIP_PERMS_FILTER', 'False'))
 # Update facet counts from Haystack
-HAYSTACK_FACET_COUNTS = strtobool(os.getenv('HAYSTACK_FACET_COUNTS', 'False'))
+HAYSTACK_FACET_COUNTS = strtobool(os.getenv('HAYSTACK_FACET_COUNTS', 'True'))
 # HAYSTACK_CONNECTIONS = {
 #    'default': {
 #        'ENGINE': 'haystack.backends.elasticsearch_backend.'
@@ -1159,4 +1161,8 @@ RISKS = {'DEFAULT_LOCATION': None,
                            'BIN': '/usr/bin/wkhtml2pdf',
                            'ARGS': []}}
 
+# Each uploaded Layer must be approved by an Admin before becoming visible
 ADMIN_MODERATE_UPLOADS = False
+
+# If this option is enabled, Resources belonging to a Group won't be visible by others
+GROUP_PRIVATE_RESOURCES = False
