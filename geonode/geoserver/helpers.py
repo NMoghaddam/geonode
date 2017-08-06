@@ -408,7 +408,7 @@ def gs_slurp(
         else:
             # obtain the store from within the workspace. if it exists, obtain resources
             # directly from store, otherwise return an empty list:
-            if store:
+            if store is not None:
                 store = get_store(cat, store, workspace=workspace)
                 if store is None:
                     resources = []
@@ -417,7 +417,7 @@ def gs_slurp(
             else:
                 resources = cat.get_resources(workspace=workspace)
 
-    elif store:
+    elif store is not None:
         store = get_store(cat, store)
         resources = cat.get_resources(store=store)
     else:
@@ -549,7 +549,7 @@ def gs_slurp(
                     workspace__exact=workspace_for_delete_compare.name)
             else:
                 q = q.filter(workspace__exact=workspace_for_delete_compare)
-        if store:
+        if store is not None:
             if isinstance(
                     store,
                     CoverageStore) or isinstance(

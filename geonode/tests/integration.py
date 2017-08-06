@@ -22,6 +22,8 @@ import os
 import json
 import datetime
 import urllib2
+# import base64
+import time
 import logging
 import gisdata
 
@@ -179,10 +181,6 @@ class GeoNodeMapTest(TestCase):
         """Test that the wcs links are correctly created for a raster"""
         filename = os.path.join(gisdata.GOOD_DATA, 'raster/test_grid.tif')
         uploaded = file_upload(filename)
-<<<<<<< HEAD
-
-=======
->>>>>>> 4e6988ccb3166cbc13b3abf7cb9d0655110ba32b
         wcs_link = False
         for link in uploaded.link_set.all():
             if link.mime == 'image/tiff':
@@ -446,10 +444,6 @@ class GeoNodeMapTest(TestCase):
         # Test Uploading then Deleting a TIFF file from GeoServer
         tif_file = os.path.join(gisdata.RASTER_DATA, 'test_grid.tif')
         tif_layer = file_upload(tif_file)
-<<<<<<< HEAD
-
-=======
->>>>>>> 4e6988ccb3166cbc13b3abf7cb9d0655110ba32b
         ws = gs_cat.get_workspace(tif_layer.workspace)
         tif_store = gs_cat.get_store(tif_layer.store, ws)
         tif_layer.delete()
@@ -470,10 +464,6 @@ class GeoNodeMapTest(TestCase):
             gisdata.VECTOR_DATA,
             'san_andres_y_providencia_poi.shp')
         shp_layer = file_upload(shp_file)
-<<<<<<< HEAD
-
-=======
->>>>>>> 4e6988ccb3166cbc13b3abf7cb9d0655110ba32b
         shp_layer_id = shp_layer.pk
         ws = gs_cat.get_workspace(shp_layer.workspace)
         shp_store = gs_cat.get_store(shp_layer.store, ws)
@@ -708,6 +698,7 @@ class GeoNodePermissionsTest(TestCase):
         check_layer(layer)
 
         # we need some time to have the service up and running
+        time.sleep(20)
 
         # Set the layer private for not authenticated users
         layer.set_permissions({'users': {'AnonymousUser': []}})
@@ -812,12 +803,11 @@ xsi:schemaLocation="http://www.opengis.net/sld http://schemas.opengis.net/sld/1.
             gisdata.VECTOR_DATA,
             'san_andres_y_providencia_poi.shp')
         layer = file_upload(thefile, overwrite=True)
-<<<<<<< HEAD
-
-=======
->>>>>>> 4e6988ccb3166cbc13b3abf7cb9d0655110ba32b
         layer.set_default_permissions()
         check_layer(layer)
+
+        # we need some time to have the service up and running
+        time.sleep(20)
 
         # request getCapabilities: layer must be there as it is published and
         # advertised: we need to check if in response there is
@@ -842,12 +832,11 @@ xsi:schemaLocation="http://www.opengis.net/sld http://schemas.opengis.net/sld/1.
                 gisdata.VECTOR_DATA,
                 'san_andres_y_providencia_administrative.shp')
             layer = file_upload(thefile, overwrite=True)
-<<<<<<< HEAD
-
-=======
->>>>>>> 4e6988ccb3166cbc13b3abf7cb9d0655110ba32b
             layer.set_default_permissions()
             check_layer(layer)
+
+            # we need some time to have the service up and running
+            time.sleep(20)
 
             str_to_check = '<Name>san_andres_y_providencia_administrative</Name>'
 

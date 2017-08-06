@@ -55,35 +55,6 @@ def geoserver_pre_delete(instance, sender, **kwargs):
 
 
 def geoserver_pre_save(instance, sender, **kwargs):
-<<<<<<< HEAD
-    """
-    move the content of this task to post save signal
-    :param instance:
-    :param sender:
-    :param kwargs:
-    :return:
-    """
-    pass
-
-
-def geoserver_post_save(instance, sender, **kwargs):
-    from geonode.messaging import producer
-    if getattr(settings, 'GEONODE_PUBSUB', False):
-        instance_dict = model_to_dict(instance)
-        payload = json_serializer_producer(instance_dict)
-        producer.geoserver_upload_layer(payload)
-    else:
-        geoserver_post_save2(instance.id)
-
-
-def geoserver_post_save2(layer_id):
-    """Save keywords to GeoServer
-
-       The way keywords are implemented requires the layer
-       to be saved to the database before accessing them.
-    """
-=======
->>>>>>> 4e6988ccb3166cbc13b3abf7cb9d0655110ba32b
     """Send information to geoserver.
 
        The attributes sent include:
@@ -96,17 +67,6 @@ def geoserver_post_save2(layer_id):
         * Point of Contact name and url
     """
 
-<<<<<<< HEAD
-    from geonode.layers.models import Layer
-
-    # If it is a layer object, post process it. If not, abort.
-    try:
-        instance = Layer.objects.get(id=layer_id)
-    except Layer.DoesNotExist:
-        return
-
-=======
->>>>>>> 4e6988ccb3166cbc13b3abf7cb9d0655110ba32b
     # Don't run this signal if is a Layer from a remote service
     if getattr(instance, "service", None) is not None:
         return
@@ -118,9 +78,9 @@ def geoserver_post_save2(layer_id):
 
     gs_resource = None
 
-    # If the store in None or an empty string then it's a new instance from an upload,
-    # in that case and when overwrite is set to True (replace) run the geoserver_upload method
-    if instance.store is None or len(instance.store) == 0:
+    # If the store in None then it's a new instance from an upload,
+    # only in this case run the geonode_uplaod method
+    if not instance.store or getattr(instance, 'overwrite', False):
         base_file, info = instance.get_base_file()
 
         # There is no need to process it if there is not file.
@@ -144,20 +104,6 @@ def geoserver_post_save2(layer_id):
             # print attr_name
             setattr(instance, key, values[key])
 
-<<<<<<< HEAD
-        to_update = {
-            'name': instance.name,
-            'workspace': instance.workspace,
-            'store': instance.store,
-            'typename': instance.typename,
-            'storeType': instance.storeType,
-        }
-
-        # Save all the modified information in the instance without triggering signals.
-        Layer.objects.filter(id=instance.id).update(**to_update)
-
-=======
->>>>>>> 4e6988ccb3166cbc13b3abf7cb9d0655110ba32b
     if not gs_resource:
         gs_resource = gs_catalog.get_resource(
             instance.name,
@@ -227,17 +173,6 @@ def geoserver_post_save2(layer_id):
         # store the resource to avoid another geoserver call in the post_save
         instance.gs_resource = gs_resource
 
-<<<<<<< HEAD
-        to_update = {
-            'bbox_x0': instance.bbox_x0,
-            'bbox_x1': instance.bbox_x1,
-            'bbox_y0': instance.bbox_y0,
-            'bbox_y1': instance.bbox_y0,
-        }
-
-        # Save all the modified information in the instance without triggering signals.
-        Layer.objects.filter(id=instance.id).update(**to_update)
-=======
 
 def geoserver_post_save(instance, sender, **kwargs):
     """Save keywords to GeoServer
@@ -249,7 +184,6 @@ def geoserver_post_save(instance, sender, **kwargs):
     #    Currently only gpkg files containing tiles will have this type & will be served via MapProxy.
     if hasattr(instance, 'storeType') and getattr(instance, 'storeType') == 'tileStore':
         return
->>>>>>> 4e6988ccb3166cbc13b3abf7cb9d0655110ba32b
 
     if type(instance) is ResourceBase:
         if hasattr(instance, 'layer'):
@@ -540,11 +474,6 @@ def geoserver_post_save(instance, sender, **kwargs):
     from geonode.catalogue.models import catalogue_post_save
     from geonode.layers.models import Layer
     catalogue_post_save(instance, Layer)
-<<<<<<< HEAD
-
-    return
-=======
->>>>>>> 4e6988ccb3166cbc13b3abf7cb9d0655110ba32b
 
 
 def geoserver_pre_save_maplayer(instance, sender, **kwargs):

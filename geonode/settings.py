@@ -1145,9 +1145,6 @@ if 'geonode.geoserver' in INSTALLED_APPS:
     MAP_BASELAYERS = [LOCAL_GEOSERVER]
     MAP_BASELAYERS.extend(baselayers)
 
-# Decouple geoserver configuration and other tasks from the main request/response cycle.
-GEONODE_PUBSUB = False
-
 # Keywords thesauri
 # e.g. THESAURI = [{'name':'inspire_themes', 'required':True, 'filter':True}, {'name':'inspire_concepts', 'filter':True}, ]
 # Required: (boolean, optional, default false) mandatory while editing metadata (not implemented yet)

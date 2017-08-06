@@ -534,9 +534,9 @@ def file_upload(filename, name=None, user=None, title=None, abstract=None,
         if layer.upload_session:
             layer.upload_session.layerfile_set.all().delete()
         layer.upload_session = upload_session
-        # Blank out the store if overwrite is true.
-        # geoserver_post_save_signal should upload the new file if needed
-        layer.store = ''
+        # Pass the parameter overwrite to tell whether the
+        # geoserver_post_save_signal should upload the new file or not
+        layer.overwrite = overwrite
         layer.save()
 
     # Assign the keywords (needs to be done after saving)
@@ -564,9 +564,6 @@ def file_upload(filename, name=None, user=None, title=None, abstract=None,
 
     if date is not None:
         layer.date = datetime.strptime(date, '%Y-%m-%d %H:%M:%S')
-<<<<<<< HEAD
-        Layer.objects.filter(id=layer.id).update(date=layer.date)
-=======
         saveAgain = True
 
     if license is not None:
@@ -579,10 +576,7 @@ def file_upload(filename, name=None, user=None, title=None, abstract=None,
 
     if saveAgain:
         layer.save()
->>>>>>> 4e6988ccb3166cbc13b3abf7cb9d0655110ba32b
 
-    # Return a fresh object, signals may have added information.
-    layer = Layer.objects.get(id=layer.id)
     return layer
 
 
