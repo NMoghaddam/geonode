@@ -1,5 +1,5 @@
-# flake8: noqa
 # -*- coding: utf-8 -*-
+
 #########################################################################
 #
 # Copyright (C) 2016 OSGeo
@@ -19,40 +19,10 @@
 #
 #########################################################################
 
-from geonode import settings
+from django.conf.urls import url
 
-if settings.ALT_OSM_BASEMAPS:
-    try:
-        from osm import *
-    except ImportError:
-        pass
+from geonode.contrib.ows_api.views import ows_endpoints
 
-if settings.CARTODB_BASEMAPS:
-    try:
-        from cartodb import *
-    except ImportError:
-        pass
-
-if settings.STAMEN_BASEMAPS:
-    try:
-        from stamen import *
-    except ImportError:
-        pass
-
-if settings.THUNDERFOREST_BASEMAPS:
-    try:
-        from thunderforest import *
-    except ImportError:
-        pass
-
-if settings.BING_API_KEY is not None:
-    try:
-        from bing import *
-    except ImportError:
-        pass
-
-if settings.MAPBOX_ACCESS_TOKEN is not None:
-    try:
-        from mapbox import *
-    except ImportError:
-        pass
+urlpatterns = [
+    url(r'^api/ows_endpoints/', ows_endpoints),
+]

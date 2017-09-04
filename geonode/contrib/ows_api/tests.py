@@ -1,4 +1,3 @@
-# flake8: noqa
 # -*- coding: utf-8 -*-
 #########################################################################
 #
@@ -19,40 +18,32 @@
 #
 #########################################################################
 
-from geonode import settings
+import json
 
-if settings.ALT_OSM_BASEMAPS:
-    try:
-        from osm import *
-    except ImportError:
-        pass
+from django.test import TestCase
 
-if settings.CARTODB_BASEMAPS:
-    try:
-        from cartodb import *
-    except ImportError:
-        pass
+from geonode.base.populate_test_data import create_models
+from geonode.base.models import Link
 
-if settings.STAMEN_BASEMAPS:
-    try:
-        from stamen import *
-    except ImportError:
-        pass
 
-if settings.THUNDERFOREST_BASEMAPS:
-    try:
-        from thunderforest import *
-    except ImportError:
-        pass
+class OWSApiTestCase(TestCase):
 
-if settings.BING_API_KEY is not None:
-    try:
-        from bing import *
-    except ImportError:
-        pass
+    fixtures = ['initial_data.json']
 
-if settings.MAPBOX_ACCESS_TOKEN is not None:
-    try:
-        from mapbox import *
-    except ImportError:
-        pass
+    def setUp(self):
+        super(OWSApiTestCase, self).setUp()
+        create_models(type='layer')
+        # prepare some WMS endpoints
+        q = Link.objects.all()
+        for l in q[:3]:
+            l.link_type = 'OGC:WMS'
+            l.save()
+
+    def test_ows_api(self):
+        url = '/api/ows_endpoints/'
+        q = Link.objects.filter(link_type__startswith="OGC:")
+        self.assertEqual(q.count(), 3)
+        resp = self.client.get(url)
+        self.assertEqual(resp.status_code, 200)
+        data = json.loads(resp.content)
+        self.assertTrue(len(data['data']), q.count())

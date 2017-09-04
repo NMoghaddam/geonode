@@ -1,4 +1,3 @@
-# flake8: noqa
 # -*- coding: utf-8 -*-
 #########################################################################
 #
@@ -19,40 +18,25 @@
 #
 #########################################################################
 
-from geonode import settings
+from django.views.generic import View
 
-if settings.ALT_OSM_BASEMAPS:
-    try:
-        from osm import *
-    except ImportError:
-        pass
+from geonode.base.enumerations import LINK_TYPES as _LT
+from geonode.base.models import Link
+from geonode.utils import json_response
 
-if settings.CARTODB_BASEMAPS:
-    try:
-        from cartodb import *
-    except ImportError:
-        pass
 
-if settings.STAMEN_BASEMAPS:
-    try:
-        from stamen import *
-    except ImportError:
-        pass
+LINK_TYPES = [L for L in _LT if L.startswith("OGC:")]
 
-if settings.THUNDERFOREST_BASEMAPS:
-    try:
-        from thunderforest import *
-    except ImportError:
-        pass
 
-if settings.BING_API_KEY is not None:
-    try:
-        from bing import *
-    except ImportError:
-        pass
+class OWSListView(View):
 
-if settings.MAPBOX_ACCESS_TOKEN is not None:
-    try:
-        from mapbox import *
-    except ImportError:
-        pass
+    def get(self, request):
+        out = {'success': True}
+        data = []
+        out['data'] = data
+        for link in Link.objects.filter(link_type__in=LINK_TYPES).distinct('url'):
+            data.append({'url': link.url, 'type': link.link_type})
+        return json_response(out)
+
+
+ows_endpoints = OWSListView.as_view()
