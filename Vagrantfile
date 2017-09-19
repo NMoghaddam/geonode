@@ -74,7 +74,7 @@ Vagrant.configure("2") do |config|
      DEBIAN_FRONTEND=noninteractive add-apt-repository --allow-unauthenticated ppa:geonode/stable
      apt-get update
      apt-get -y dist-upgrade
-     apt-get install -y geonode
+     apt-get install -y emacs geonode
      apt-get -y clean
      apt-get -y autoremove
    SHELL
