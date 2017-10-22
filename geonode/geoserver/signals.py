@@ -42,6 +42,7 @@ from geonode.layers.models import Layer
 from geonode.social.signals import json_serializer_producer
 from geonode.catalogue.models import catalogue_post_save
 
+import geoserver
 from geoserver.layer import Layer as GsLayer
 
 logger = logging.getLogger("geonode.geoserver.signals")
@@ -72,9 +73,12 @@ def geoserver_pre_save(*args, **kwargs):
 
 def geoserver_post_save(instance, sender, **kwargs):
     from geonode.messaging import producer
-    instance_dict = model_to_dict(instance)
-    payload = json_serializer_producer(instance_dict)
-    producer.geoserver_upload_layer(payload)
+    # this is attached to various models, (ResourceBase, Document)
+    # so we should select what will be handled here
+    if isinstance(instance, Layer):
+        instance_dict = model_to_dict(instance)
+        payload = json_serializer_producer(instance_dict)
+        producer.geoserver_upload_layer(payload)
 
 
 def geoserver_post_save_local(layer_id, *args, **kwargs):
@@ -159,7 +163,13 @@ def geoserver_post_save_local(layer_id, *args, **kwargs):
     # gs_resource should only be called if
     # ogc_server_settings.BACKEND_WRITE_ENABLED == True
     if getattr(ogc_server_settings, "BACKEND_WRITE_ENABLED", True):
-        gs_catalog.save(gs_resource)
+        try:
+            gs_catalog.save(gs_resource)
+        except geoserver.catalog.FailedRequestError as e:
+            msg = ('Error while trying to save resource named %s in GeoServer, '
+                   'try to use: "%s"' % (gs_resource, str(e)))
+            e.args = (msg,)
+            logger.exception(e)
 
     gs_layer = gs_catalog.get_layer(instance.name)
 
@@ -180,7 +190,13 @@ def geoserver_post_save_local(layer_id, *args, **kwargs):
         # gs_layer should only be called if
         # ogc_server_settings.BACKEND_WRITE_ENABLED == True
         if getattr(ogc_server_settings, "BACKEND_WRITE_ENABLED", True):
-            gs_catalog.save(gs_layer)
+            try:
+                gs_catalog.save(gs_layer)
+            except geoserver.catalog.FailedRequestError as e:
+                msg = ('Error while trying to save layer named %s in GeoServer, '
+                       'try to use: "%s"' % (gs_layer, str(e)))
+                e.args = (msg,)
+                logger.exception(e)
 
     if type(instance) is ResourceBase:
         if hasattr(instance, 'layer'):
@@ -249,7 +265,13 @@ def geoserver_post_save_local(layer_id, *args, **kwargs):
         # gs_resource should only be called if
         # ogc_server_settings.BACKEND_WRITE_ENABLED == True
         if getattr(ogc_server_settings, "BACKEND_WRITE_ENABLED", True):
-            gs_catalog.save(gs_resource)
+            try:
+                gs_catalog.save(gs_resource)
+            except geoserver.catalog.FailedRequestError as e:
+                msg = ('Error while trying to save resource named %s in GeoServer, '
+                       'try to use: "%s"' % (gs_resource, str(e)))
+                e.args = (msg,)
+                logger.exception(e)
 
     to_update = {
         'title': instance.title or instance.name,
