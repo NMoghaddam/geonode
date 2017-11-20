@@ -18,6 +18,8 @@
 #
 #########################################################################
 
+import fileinput
+import glob
 import os
 import re
 import shutil
@@ -26,16 +28,12 @@ import time
 import urllib
 import urllib2
 import zipfile
-import glob
-import fileinput
-import yaml
-
-from setuptools.command import easy_install
 from urlparse import urlparse
 
-from paver.easy import task, options, cmdopts, needs
-from paver.easy import path, sh, info, call_task
-from paver.easy import BuildFailure
+import yaml
+from paver.easy import (BuildFailure, call_task, cmdopts, info, needs, options,
+                        path, sh, task)
+from setuptools.command import easy_install
 
 try:
     from geonode.settings import GEONODE_APPS
@@ -83,6 +81,12 @@ def grab(src, dest, name):
 ])
 def setup_geoserver(options):
     """Prepare a testing instance of GeoServer."""
+    from geonode.settings import INSTALLED_APPS
+
+    # only start if using Geoserver backend
+    if 'geonode.geoserver' not in INSTALLED_APPS:
+        return
+
     download_dir = path('downloaded')
     if not download_dir.exists():
         download_dir.makedirs()
@@ -121,6 +125,47 @@ def setup_geoserver(options):
     _install_data_dir()
 
 
+@task
+def setup_qgis_server(options):
+    """Prepare a testing instance of QGIS Server."""
+    from geonode.settings import INSTALLED_APPS
+
+    # only start if using QGIS Server backend
+    if 'geonode.qgis_server' not in INSTALLED_APPS:
+        return
+
+    # QGIS Server testing instance run on top of docker
+    try:
+        sh('scripts/misc/docker_check.sh')
+    except BaseException:
+        info("You need to have docker and docker-compose installed.")
+        return
+
+    info('Docker and docker-compose were installed.')
+    info('Proceeded to setup QGIS Server.')
+    info('Create QGIS Server related folder.')
+
+    try:
+        os.makedirs('geonode/qgis_layer')
+    except BaseException:
+        pass
+
+    try:
+        os.makedirs('geonode/qgis_tiles')
+    except BaseException:
+        pass
+
+    all_permission = 0o777
+    os.chmod('geonode/qgis_layer', all_permission)
+    stat = os.stat('geonode/qgis_layer')
+    info('Mode : %o' % stat.st_mode)
+    os.chmod('geonode/qgis_tiles', all_permission)
+    stat = os.stat('geonode/qgis_tiles')
+    info('Mode : %o' % stat.st_mode)
+
+    info('QGIS Server related folder successfully setup.')
+
+
 def _install_data_dir():
     target_data_dir = path('geoserver/data')
     if target_data_dir.exists():
@@ -131,23 +176,12 @@ def _install_data_dir():
 
     try:
         config = path(
-            'geoserver/data/security/auth/geonodeAuthProvider/config.xml')
-        with open(config) as f:
-            xml = f.read()
-            m = re.search('baseUrl>([^<]+)', xml)
-            xml = xml[:m.start(1)] + "http://localhost:8000/" + xml[m.end(1):]
-            with open(config, 'w') as f:
-                f.write(xml)
-    except Exception as e:
-        print(e)
-
-    try:
-        config = path(
             'geoserver/data/global.xml')
         with open(config) as f:
             xml = f.read()
             m = re.search('proxyBaseUrl>([^<]+)', xml)
-            xml = xml[:m.start(1)] + "http://localhost:8080/geoserver" + xml[m.end(1):]
+            xml = xml[:m.start(1)] + \
+                "http://localhost:8080/geoserver" + xml[m.end(1):]
             with open(config, 'w') as f:
                 f.write(xml)
     except Exception as e:
@@ -159,15 +193,20 @@ def _install_data_dir():
         with open(config) as f:
             xml = f.read()
             m = re.search('accessTokenUri>([^<]+)', xml)
-            xml = xml[:m.start(1)] + "http://localhost:8000/o/token/" + xml[m.end(1):]
+            xml = xml[:m.start(1)] + \
+                "http://localhost:8000/o/token/" + xml[m.end(1):]
             m = re.search('userAuthorizationUri>([^<]+)', xml)
-            xml = xml[:m.start(1)] + "http://localhost:8000/o/authorize/" + xml[m.end(1):]
+            xml = xml[:m.start(
+                1)] + "http://localhost:8000/o/authorize/" + xml[m.end(1):]
             m = re.search('redirectUri>([^<]+)', xml)
-            xml = xml[:m.start(1)] + "http://localhost:8080/geoserver/index.html" + xml[m.end(1):]
+            xml = xml[:m.start(
+                1)] + "http://localhost:8080/geoserver/index.html" + xml[m.end(1):]
             m = re.search('checkTokenEndpointUrl>([^<]+)', xml)
-            xml = xml[:m.start(1)] + "http://localhost:8000/api/o/v4/tokeninfo/" + xml[m.end(1):]
+            xml = xml[:m.start(
+                1)] + "http://localhost:8000/api/o/v4/tokeninfo/" + xml[m.end(1):]
             m = re.search('logoutUri>([^<]+)', xml)
-            xml = xml[:m.start(1)] + "http://localhost:8000/account/logout/" + xml[m.end(1):]
+            xml = xml[:m.start(
+                1)] + "http://localhost:8000/account/logout/" + xml[m.end(1):]
             with open(config, 'w') as f:
                 f.write(xml)
     except Exception as e:
@@ -195,6 +234,7 @@ def static(options):
 @task
 @needs([
     'setup_geoserver',
+    'setup_qgis_server',
 ])
 def setup(options):
     """Get dependencies and prepare a GeoNode development environment."""
@@ -355,6 +395,7 @@ def package(options):
 
 @task
 @needs(['start_geoserver',
+        'start_qgis_server',
         'start_django'])
 @cmdopts([
     ('bind=', 'b', 'Bind server to provided IP address and port number.'),
@@ -384,17 +425,48 @@ def stop_geoserver():
     """
     Stop GeoServer
     """
+    from geonode.settings import INSTALLED_APPS
+
+    # only start if using Geoserver backend
+    if 'geonode.geoserver' not in INSTALLED_APPS:
+        return
     kill('java', 'geoserver')
 
 
 @task
+@cmdopts([
+    ('qgis_server_port=', 'p', 'The port of the QGIS Server instance.')
+])
+def stop_qgis_server():
+    """
+    Stop QGIS Server Backend.
+    """
+    from geonode.settings import INSTALLED_APPS
+
+    # only start if using QGIS Server backend
+    if 'geonode.qgis_server' not in INSTALLED_APPS:
+        return
+    port = options.get('qgis_server_port', '9000')
+
+    sh(
+        'docker-compose -f docker-compose-qgis-server.yml down',
+        env={
+            'GEONODE_PROJECT_PATH': os.getcwd(),
+            'QGIS_SERVER_PORT': port
+        })
+
+
+@task
+@needs([
+    'stop_geoserver',
+    'stop_qgis_server'
+])
 def stop():
     """
     Stop GeoNode
     """
     # windows needs to stop the geoserver first b/c we can't tell which python
     # is running, so we kill everything
-    stop_geoserver()
     info("Stopping GeoNode ...")
     stop_django()
 
@@ -407,7 +479,7 @@ def start_django():
     """
     Start the GeoNode Django application
     """
-    bind = options.get('bind', '')
+    bind = options.get('bind', '0.0.0.0:8000')
     foreground = '' if options.get('foreground', False) else '&'
     sh('python manage.py runserver %s %s' % (bind, foreground))
 
@@ -429,7 +501,12 @@ def start_geoserver(options):
     Start GeoServer with GeoNode extensions
     """
 
-    from geonode.settings import OGC_SERVER
+    from geonode.settings import OGC_SERVER, INSTALLED_APPS
+
+    # only start if using Geoserver backend
+    if 'geonode.geoserver' not in INSTALLED_APPS:
+        return
+
     GEOSERVER_BASE_URL = OGC_SERVER['default']['LOCATION']
     url = GEOSERVER_BASE_URL
 
@@ -515,6 +592,30 @@ def start_geoserver(options):
 
 
 @task
+@cmdopts([
+    ('qgis_server_port=', 'p', 'The port of the QGIS Server instance.')
+])
+def start_qgis_server():
+    """Start QGIS Server instance with GeoNode related plugins."""
+    from geonode.settings import INSTALLED_APPS
+
+    # only start if using QGIS Serrver backend
+    if 'geonode.qgis_server' not in INSTALLED_APPS:
+        return
+    info('Starting up QGIS Server...')
+
+    port = options.get('qgis_server_port', '9000')
+
+    sh(
+        'docker-compose -f docker-compose-qgis-server.yml up -d qgis-server',
+        env={
+            'GEONODE_PROJECT_PATH': os.getcwd(),
+            'QGIS_SERVER_PORT': port
+        })
+    info('QGIS Server is up.')
+
+
+@task
 def test(options):
     """
     Run GeoNode's Unit Test Suite
@@ -552,7 +653,7 @@ def test_integration(options):
             sh('sleep 30')
             call_task('setup_data')
         sh(('python manage.py test %s'
-            ' --noinput --liveserver=localhost:8000' % name))
+            ' --noinput --liveserver=0.0.0.0:8000' % name))
     except BuildFailure as e:
         info('Tests failed! %s' % str(e))
     else:
