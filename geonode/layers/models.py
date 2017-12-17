@@ -139,6 +139,7 @@ class Layer(ResourceBase):
 
     default_style = models.ForeignKey(
         Style,
+        on_delete=models.SET_NULL,
         related_name='layer_default_style',
         null=True,
         blank=True)
@@ -523,7 +524,8 @@ def pre_save_layer(instance, sender, **kwargs):
         if instance.is_remote:
             instance.alternate = instance.name
         else:
-            instance.alternate = 'geonode:%s' % instance.name
+            # use workspace instead of hardcoded geonode
+            instance.alternate = '%s:%s' % (settings.DEFAULT_WORKSPACE, instance.name)
 
     base_file, info = instance.get_base_file()
 
