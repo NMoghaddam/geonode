@@ -1,4 +1,3 @@
-
 # -*- coding: utf-8 -*-
 #########################################################################
 #
@@ -31,6 +30,7 @@ import dj_database_url
 # General Django development settings
 #
 from django.conf.global_settings import DATETIME_INPUT_FORMATS
+from django.conf.global_settings import TEMPLATE_CONTEXT_PROCESSORS
 from geonode import get_version
 from kombu import Queue
 
@@ -268,6 +268,7 @@ GEONODE_APPS = (
     # GeoNode internal apps
     'geonode.people',
     'geonode.base',
+    'geonode.client',
     'geonode.layers',
     'geonode.maps',
     'geonode.proxy',
@@ -340,7 +341,7 @@ INSTALLED_APPS = (
     'geoexplorer',
     'leaflet',
     'django_extensions',
-    # 'geonode-client',
+    'geonode-client',
     # 'haystack',
     'autocomplete_light',
     'mptt',
@@ -1048,8 +1049,8 @@ CACHES = {
     #     }
 }
 
-LAYER_PREVIEW_LIBRARY = 'geoext'
-# LAYER_PREVIEW_LIBRARY = 'leaflet'
+GEONODE_CLIENT_LAYER_PREVIEW_LIBRARY = 'geoext'  # DEPRECATED use HOOKSET instead
+GEONODE_CLIENT_HOOKSET = "geonode.client.hooksets.GeoExtHookSet"
 
 SERVICE_UPDATE_INTERVAL = 0
 
@@ -1079,6 +1080,7 @@ _EMAIL_BACKEND = "pinax.notifications.backends.email.EmailBackend"
 PINAX_NOTIFICATIONS_BACKENDS = [
     ("email", _EMAIL_BACKEND),
 ]
+PINAX_NOTIFICATIONS_HOOKSET = "pinax.notifications.hooks.DefaultHookSet"
 
 # Queue non-blocking notifications.
 PINAX_NOTIFICATIONS_QUEUE_ALL = False
@@ -1255,3 +1257,5 @@ ACCOUNT_EMAIL_VERIFICATION = 'optional'
 SOCIALACCOUNT_ADAPTER = 'geonode.people.adapters.SocialAccountAdapter'
 
 INVITATIONS_ADAPTER = ACCOUNT_ADAPTER
+
+TEMPLATE_CONTEXT_PROCESSORS += ('django.core.context.processors.request', )
