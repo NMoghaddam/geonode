@@ -30,7 +30,6 @@ import dj_database_url
 # General Django development settings
 #
 from django.conf.global_settings import DATETIME_INPUT_FORMATS
-from django.conf.global_settings import TEMPLATE_CONTEXT_PROCESSORS
 from geonode import get_version
 from kombu import Queue
 
@@ -264,6 +263,12 @@ MAX_DOCUMENT_SIZE = int(os.getenv('MAX_DOCUMENT_SIZE ', '2'))  # MB
 # DOCUMENT_TYPE_MAP = {}
 # DOCUMENT_MIMETYPE_MAP = {}
 
+UNOCONV_ENABLE = strtobool(os.getenv('UNOCONV_ENABLE', 'False'))
+
+if UNOCONV_ENABLE:
+    UNOCONV_EXECUTABLE = os.getenv('UNOCONV_EXECUTABLE', '/usr/bin/unoconv')
+    UNOCONV_TIMEOUT = os.getenv('UNOCONV_TIMEOUT', 30)  # seconds
+
 GEONODE_APPS = (
     # GeoNode internal apps
     'geonode.people',
@@ -331,8 +336,6 @@ INSTALLED_APPS = (
     'django.contrib.humanize',
     'django.contrib.gis',
 
-    # Third party apps
-
     # Utility
     'pagination',
     'taggit',
@@ -341,7 +344,7 @@ INSTALLED_APPS = (
     'geoexplorer',
     'leaflet',
     'django_extensions',
-    'geonode-client',
+    'django_basic_auth',
     # 'haystack',
     'autocomplete_light',
     'mptt',
@@ -387,7 +390,6 @@ MONITORING_DATA_TTL = timedelta(days=7)
 # this will disable csrf check for notification config views,
 # use with caution - for dev purpose only
 MONITORING_DISABLE_CSRF = False
-
 
 LOGGING = {
     'version': 1,
@@ -481,6 +483,9 @@ MIDDLEWARE_CLASSES = (
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 
+    # Security settings
+    'django.middleware.security.SecurityMiddleware',
+
     # This middleware allows to print private layers for the users that have
     # the permissions to view them.
     # It sets temporary the involved layers as public before restoring the
@@ -495,6 +500,18 @@ MIDDLEWARE_CLASSES = (
     'django.contrib.auth.middleware.SessionAuthenticationMiddleware',
     'oauth2_provider.middleware.OAuth2TokenMiddleware',
 )
+
+# Security stuff
+MIDDLEWARE_CLASSES += ('django.middleware.security.SecurityMiddleware',)
+SESSION_COOKIE_SECURE = False
+CSRF_COOKIE_SECURE = False
+CSRF_COOKIE_HTTPONLY = False
+X_FRAME_OPTIONS = 'DENY'
+SECURE_CONTENT_TYPE_NOSNIFF = True
+SECURE_BROWSER_XSS_FILTER = True
+SECURE_SSL_REDIRECT = False
+SECURE_HSTS_SECONDS = 3600
+SECURE_HSTS_INCLUDE_SUBDOMAINS = True
 
 # Replacement of default authentication backend in order to support
 # permissions per object.
@@ -674,6 +691,19 @@ UPLOADER = {
         'EPSG:900913',
         'EPSG:32647',
         'EPSG:32736'
+    ],
+    'SUPPORTED_EXT': [
+        '.shp',
+        '.csv',
+        '.kml',
+        '.kmz',
+        '.json',
+        '.geojson',
+        '.tif',
+        '.tiff',
+        '.geotiff',
+        '.gml',
+        '.xml'
     ]
 }
 
@@ -1258,4 +1288,5 @@ SOCIALACCOUNT_ADAPTER = 'geonode.people.adapters.SocialAccountAdapter'
 
 INVITATIONS_ADAPTER = ACCOUNT_ADAPTER
 
-TEMPLATE_CONTEXT_PROCESSORS += ('django.core.context.processors.request', )
+# Choose thumbnail generator -- this is the default generator
+THUMBNAIL_GENERATOR = "geonode.layers.utils.create_gs_thumbnail_geonode"
