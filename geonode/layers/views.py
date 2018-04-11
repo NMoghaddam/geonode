@@ -28,6 +28,8 @@ import uuid
 import decimal
 import re
 
+from celery.exceptions import TimeoutError
+
 from django.contrib.gis.geos import GEOSGeometry
 from django.template.response import TemplateResponse
 from requests import Request
@@ -67,11 +69,14 @@ from geonode.base.enumerations import CHARSETS
 from geonode.base.models import TopicCategory
 from geonode.groups.models import GroupProfile
 
-from geonode.utils import default_map_config, check_ogc_backend
-from geonode.utils import GXPLayer
-from geonode.utils import GXPMap
+from geonode.utils import (resolve_object,
+                           default_map_config,
+                           check_ogc_backend,
+                           llbbox_to_mercator,
+                           bbox_to_projection,
+                           GXPLayer,
+                           GXPMap)
 from geonode.layers.utils import file_upload, is_raster, is_vector
-from geonode.utils import resolve_object, llbbox_to_mercator
 from geonode.people.forms import ProfileForm, PocForm
 from geonode.security.views import _perms_info_json
 from geonode.documents.models import get_related_documents
@@ -110,7 +115,7 @@ _PERMISSION_MSG_VIEW = _("You are not permitted to view this layer")
 
 
 def log_snippet(log_file):
-    if not os.path.isfile(log_file):
+    if not log_file or not os.path.isfile(log_file):
         return "No log file at %s" % log_file
 
     with open(log_file, "r") as f:
@@ -180,7 +185,8 @@ def layer_upload(request, template='upload/layer_upload.html'):
                 title = slugify(name_base.replace(".", "_"))
             name = slugify(name_base.replace(".", "_"))
 
-            if form.cleaned_data["abstract"] is not None and len(form.cleaned_data["abstract"]) > 0:
+            if form.cleaned_data["abstract"] is not None and len(
+                    form.cleaned_data["abstract"]) > 0:
                 abstract = form.cleaned_data["abstract"]
             else:
                 abstract = "No abstract provided."
@@ -214,7 +220,18 @@ def layer_upload(request, template='upload/layer_upload.html'):
                 exception_type, error, tb = sys.exc_info()
                 logger.exception(e)
                 out['success'] = False
-                out['errors'] = u''.join(error).encode('utf-8')
+                try:
+                    out['errors'] = u''.join(error).encode('utf-8')
+                except BaseException:
+                    try:
+                        out['errors'] = str(error)
+                    except BaseException:
+                        try:
+                            tb = traceback.format_exc()
+                            out['errors'] = tb
+                        except BaseException:
+                            pass
+
                 # Assign the error message to the latest UploadSession from
                 # that user.
                 latest_uploads = UploadSession.objects.filter(
@@ -265,7 +282,8 @@ def layer_upload(request, template='upload/layer_upload.html'):
             status_code = 400
         if settings.MONITORING_ENABLED:
             if saved_layer or name:
-                layer_name = saved_layer.alternate if hasattr(saved_layer, 'alternate') else name
+                layer_name = saved_layer.alternate if hasattr(
+                    saved_layer, 'alternate') else name
                 request.add_resource('layer', layer_name)
         return HttpResponse(
             json.dumps(out),
@@ -284,37 +302,134 @@ def layer_detail(request, layername, template='layers/layer_detail.html'):
     config = layer.attribute_config()
 
     # Add required parameters for GXP lazy-loading
-    layer_bbox = layer.bbox
-    bbox = [float(coord) for coord in list(layer_bbox[0:4])]
+    layer_bbox = layer.bbox[0:4]
+    bbox = layer_bbox[:]
+    bbox[0] = float(layer_bbox[0])
+    bbox[1] = float(layer_bbox[2])
+    bbox[2] = float(layer_bbox[1])
+    bbox[3] = float(layer_bbox[3])
+
+    def decimal_encode(bbox):
+        import decimal
+        _bbox = []
+        for o in [float(coord) for coord in bbox]:
+            if isinstance(o, decimal.Decimal):
+                o = (str(o) for o in [o])
+            _bbox.append(o)
+        return _bbox
+
+    def sld_definition(style):
+        from urllib import quote
+        _sld = {
+            "title": style.sld_title or style.name,
+            "legend": {
+                "height": "40",
+                "width": "22",
+                "href": layer.ows_url +
+                "?service=wms&request=GetLegendGraphic&format=image%2Fpng&width=20&height=20&layer=" +
+                quote(layer.service_typename, safe=''),
+                "format": "image/png"
+            },
+            "name": style.name
+        }
+        return _sld
+
     if hasattr(layer, 'srid'):
         config['crs'] = {
             'type': 'name',
             'properties': layer.srid
         }
-    config["srs"] = getattr(settings, 'DEFAULT_MAP_CRS', 'EPSG:900913')
-    config["bbox"] = bbox if config["srs"] != 'EPSG:900913' \
-        else llbbox_to_mercator([float(coord) for coord in bbox])
+    # Add required parameters for GXP lazy-loading
+    attribution = "%s %s" % (layer.owner.first_name,
+                             layer.owner.last_name) if layer.owner.first_name or layer.owner.last_name else str(
+        layer.owner)
+    srs = getattr(settings, 'DEFAULT_MAP_CRS', 'EPSG:3857')
+    srs_srid = int(srs.split(":")[1]) if srs != "EPSG:900913" else 3857
+    config["attribution"] = "<span class='gx-attribution-title'>%s</span>" % attribution
+    config["format"] = getattr(
+        settings, 'DEFAULT_LAYER_FORMAT', 'image/png')
     config["title"] = layer.title
-    config["queryable"] = True
+    config["wrapDateLine"] = True
+    config["visibility"] = True
+    config["srs"] = srs
+    config["bbox"] = decimal_encode(
+        bbox_to_projection([float(coord) for coord in layer_bbox] + [layer.srid, ],
+                           target_srid=int(srs.split(":")[1]))[:4])
+    config["capability"] = {
+        "abstract": layer.abstract,
+        "name": layer.alternate,
+        "title": layer.title,
+        "queryable": True,
+        "bbox": {
+            layer.srid: {
+                "srs": layer.srid,
+                "bbox": decimal_encode(bbox)
+            },
+            srs: {
+                "srs": srs,
+                "bbox": decimal_encode(
+                    bbox_to_projection([float(coord) for coord in layer_bbox] + [layer.srid, ],
+                                       target_srid=srs_srid)[:4])
+            },
+            "EPSG:4326": {
+                "srs": "EPSG:4326",
+                "bbox": decimal_encode(bbox) if layer.srid == 'EPSG:4326' else
+                decimal_encode(bbox_to_projection(
+                    [float(coord) for coord in layer_bbox] + [layer.srid, ], target_srid=4326)[:4])
+            },
+            "EPSG:900913": {
+                "srs": "EPSG:900913",
+                "bbox": decimal_encode(bbox) if layer.srid == 'EPSG:900913' else
+                decimal_encode(bbox_to_projection(
+                    [float(coord) for coord in layer_bbox] + [layer.srid, ], target_srid=3857)[:4])
+            }
+        },
+        "srs": {
+            srs: True
+        },
+        "formats": ["image/png", "application/atom xml", "application/atom+xml", "application/json;type=utfgrid",
+                    "application/openlayers", "application/pdf", "application/rss xml", "application/rss+xml",
+                    "application/vnd.google-earth.kml", "application/vnd.google-earth.kml xml",
+                    "application/vnd.google-earth.kml+xml", "application/vnd.google-earth.kml+xml;mode=networklink",
+                    "application/vnd.google-earth.kmz", "application/vnd.google-earth.kmz xml",
+                    "application/vnd.google-earth.kmz+xml", "application/vnd.google-earth.kmz;mode=networklink",
+                    "atom", "image/geotiff", "image/geotiff8", "image/gif", "image/gif;subtype=animated",
+                    "image/jpeg", "image/png8", "image/png; mode=8bit", "image/svg", "image/svg xml",
+                    "image/svg+xml", "image/tiff", "image/tiff8", "image/vnd.jpeg-png",
+                    "kml", "kmz", "openlayers", "rss", "text/html; subtype=openlayers", "utfgrid"],
+        "attribution": {
+            "title": attribution
+        },
+        "infoFormats": ["text/plain", "application/vnd.ogc.gml", "text/xml", "application/vnd.ogc.gml/3.1.1",
+                        "text/xml; subtype=gml/3.1.1", "text/html", "application/json"],
+        "styles": [sld_definition(s) for s in layer.styles.all()],
+        "prefix": layer.alternate.split(":")[0] if ":" in layer.alternate else "",
+        "keywords": [k.name for k in layer.keywords.all()] if layer.keywords else [],
+        "llbbox": decimal_encode(bbox) if layer.srid == 'EPSG:4326' else
+        decimal_encode(bbox_to_projection(
+            [float(coord) for coord in layer_bbox] + [layer.srid, ], target_srid=4326)[:4])
+    }
 
     if layer.storeType == "remoteStore":
-        service = layer.remote_service
-        source_params = {
-            "ptype": service.ptype,
-            "remote": True,
-            "url": service.service_url,
-            "name": service.name,
-            "title": "[R] %s" % service.title}
+        # service = layer.remote_service
+        # source_params = {
+        #     "ptype": service.ptype,
+        #     "remote": True,
+        #     "url": service.service_url,
+        #     "name": service.name,
+        #     "title": "[R] %s" % service.title}
         maplayer = GXPLayer(
             name=layer.alternate,
             ows_url=layer.ows_url,
             layer_params=json.dumps(config),
-            source_params=json.dumps(source_params))
+            # source_params=json.dumps(source_params)
+        )
     else:
         maplayer = GXPLayer(
             name=layer.alternate,
             ows_url=layer.ows_url,
-            layer_params=json.dumps(config))
+            layer_params=json.dumps(config)
+        )
 
     # Update count for popularity ranking,
     # but do not includes admins or resource owners
@@ -322,10 +437,11 @@ def layer_detail(request, layername, template='layers/layer_detail.html'):
 
     # center/zoom don't matter; the viewer will center on the layer bounds
     map_obj = GXPMap(
+        sender=Layer,
         projection=getattr(
             settings,
             'DEFAULT_MAP_CRS',
-            'EPSG:900913'))
+            'EPSG:3857'))
 
     NON_WMS_BASE_LAYERS = [
         la for la in default_map_config(request)[1] if la.ows_url is None]
@@ -364,27 +480,29 @@ def layer_detail(request, layername, template='layers/layer_detail.html'):
             granules = {"features": []}
             all_granules = {"features": []}
 
-    if 'geonode.geoserver' in settings.INSTALLED_APPS:
+    if check_ogc_backend(geoserver.BACKEND_PACKAGE):
         from geonode.geoserver.views import get_capabilities
-        if layer.has_time:
-            workspace, layername = layer.alternate.split(":") if ":" in layer.alternate else (None, layer.alternate)
-            # WARNING Please make sure to have enabled DJANGO CACHE as per
-            # https://docs.djangoproject.com/en/2.0/topics/cache/#filesystem-caching
-            wms_capabilities_resp = get_capabilities(request, layer.id, tolerant=True)
-            if wms_capabilities_resp.status_code >= 200 and wms_capabilities_resp.status_code < 400:
-                wms_capabilities = wms_capabilities_resp.getvalue()
-                if wms_capabilities:
-                    import xml.etree.ElementTree as ET
-                    e = ET.fromstring(wms_capabilities)
-                    for atype in e.findall("Capability/Layer/Layer[Name='%s']/Extent" % (layername)):
-                        dim_name = atype.get('name')
-                        if dim_name:
-                            dim_name = str(dim_name).lower()
-                            if dim_name == 'time':
-                                dim_values = atype.text
-                                if dim_values:
-                                    all_times = dim_values.split(",")
-                                    break
+        workspace, layername = layer.alternate.split(
+            ":") if ":" in layer.alternate else (None, layer.alternate)
+        # WARNING Please make sure to have enabled DJANGO CACHE as per
+        # https://docs.djangoproject.com/en/2.0/topics/cache/#filesystem-caching
+        wms_capabilities_resp = get_capabilities(
+            request, layer.id, tolerant=True)
+        if wms_capabilities_resp.status_code >= 200 and wms_capabilities_resp.status_code < 400:
+            wms_capabilities = wms_capabilities_resp.getvalue()
+            if wms_capabilities:
+                import xml.etree.ElementTree as ET
+                e = ET.fromstring(wms_capabilities)
+                for atype in e.findall(
+                        "./[Name='%s']/Extent[@name='time']" % (layername)):
+                    dim_name = atype.get('name')
+                    if dim_name:
+                        dim_name = str(dim_name).lower()
+                        if dim_name == 'time':
+                            dim_values = atype.text
+                            if dim_values:
+                                all_times = dim_values.split(",")
+                                break
 
     group = None
     if layer.group:
@@ -411,6 +529,8 @@ def layer_detail(request, layername, template='layers/layer_detail.html'):
         "all_times": all_times,
         "show_popup": show_popup,
         "filter": filter,
+        "storeType": layer.storeType,
+        "online": (layer.remote_service.probe == 200) if layer.storeType == "remoteStore" else True
     }
 
     if 'access_token' in request.session:
@@ -428,7 +548,7 @@ def layer_detail(request, layername, template='layers/layer_detail.html'):
     context_dict["crs"] = getattr(
         settings,
         'DEFAULT_MAP_CRS',
-        'EPSG:900913')
+        'EPSG:3857')
 
     # provide bbox in EPSG:4326 for leaflet
     if context_dict["preview"] == 'leaflet':
@@ -478,8 +598,8 @@ def layer_detail(request, layername, template='layers/layer_detail.html'):
             workspace, name = layers_names.split(':', 1)
         else:
             name = layers_names
-    except:
-        print "Can not identify workspace type and layername"
+    except BaseException:
+        logger.error("Can not identify workspace type and layername")
 
     context_dict["layer_name"] = json.dumps(layers_names)
 
@@ -500,7 +620,11 @@ def layer_detail(request, layername, template='layers/layer_detail.html'):
             # get schema for specific layer
             username = settings.OGC_SERVER['default']['USER']
             password = settings.OGC_SERVER['default']['PASSWORD']
-            schema = get_schema(location, name, username=username, password=password)
+            schema = get_schema(
+                location,
+                name,
+                username=username,
+                password=password)
 
             # get the name of the column which holds the geometry
             if 'the_geom' in schema['properties']:
@@ -517,8 +641,13 @@ def layer_detail(request, layername, template='layers/layer_detail.html'):
             context_dict["schema"] = schema
             context_dict["filtered_attributes"] = filtered_attributes
 
-    except:
-        print "Possible error with OWSLib. Turning all available properties to string"
+    except BaseException:
+        logger.error(
+            "Possible error with OWSLib. Turning all available properties to string")
+
+    if settings.GEOTIFF_IO_ENABLED:
+        from geonode.contrib.geotiffio import create_geotiff_io_url
+        context_dict["link_geotiff_io"] = create_geotiff_io_url(layer, access_token)
 
     # maps owned by user needed to fill the "add to existing map section" in template
     if request.user.is_authenticated():
@@ -527,12 +656,14 @@ def layer_detail(request, layername, template='layers/layer_detail.html'):
         request, template, context=context_dict)
 
 
-# Loads the data using the OWS lib when the "Do you want to filter it" button is clicked.
+# Loads the data using the OWS lib when the "Do you want to filter it"
+# button is clicked.
 def load_layer_data(request, template='layers/layer_detail.html'):
     context_dict = {}
     data_dict = json.loads(request.POST.get('json_data'))
     layername = data_dict['layer_name']
-    filtered_attributes = [x for x in data_dict['filtered_attributes'].split(',') if '/load_layer_data' not in x]
+    filtered_attributes = [x for x in data_dict['filtered_attributes'].split(
+        ',') if '/load_layer_data' not in x]
     workspace, name = layername.split(':')
     location = "{location}{service}".format(** {
         'location': settings.OGC_SERVER['default']['LOCATION'],
@@ -540,11 +671,19 @@ def load_layer_data(request, template='layers/layer_detail.html'):
     })
 
     try:
-        # TODO: should be improved by using OAuth2 token (or at least user related to it) instead of super-powers
+        # TODO: should be improved by using OAuth2 token (or at least user
+        # related to it) instead of super-powers
         username = settings.OGC_SERVER['default']['USER']
         password = settings.OGC_SERVER['default']['PASSWORD']
-        wfs = WebFeatureService(location, version='1.1.0', username=username, password=password)
-        response = wfs.getfeature(typename=name, propertyname=filtered_attributes, outputFormat='application/json')
+        wfs = WebFeatureService(
+            location,
+            version='1.1.0',
+            username=username,
+            password=password)
+        response = wfs.getfeature(
+            typename=name,
+            propertyname=filtered_attributes,
+            outputFormat='application/json')
         x = response.read()
         x = json.loads(x)
         features_response = json.dumps(x)
@@ -559,19 +698,20 @@ def load_layer_data(request, template='layers/layer_detail.html'):
         for i in range(len(decoded_features)):
             for key, value in decoded_features[i]['properties'].iteritems():
                 if value != '' and isinstance(value, (string_types, int, float)) and (
-                '/load_layer_data' not in value):
-                        properties[key].append(value)
+                        '/load_layer_data' not in value):
+                    properties[key].append(value)
 
         for key in properties:
             properties[key] = list(set(properties[key]))
             properties[key].sort()
 
         context_dict["feature_properties"] = properties
-    except:
+    except BaseException:
         import traceback
         traceback.print_exc()
-        print "Possible error with OWSLib."
-    return HttpResponse(json.dumps(context_dict), content_type="application/json")
+        logger.error("Possible error with OWSLib.")
+    return HttpResponse(json.dumps(context_dict),
+                        content_type="application/json")
 
 
 def layer_feature_catalogue(
@@ -643,25 +783,26 @@ def layer_metadata(
             'type': 'name',
             'properties': layer.srid
         }
-    config["srs"] = getattr(settings, 'DEFAULT_MAP_CRS', 'EPSG:900913')
-    config["bbox"] = bbox if config["srs"] != 'EPSG:900913' \
+    config["srs"] = getattr(settings, 'DEFAULT_MAP_CRS', 'EPSG:3857')
+    config["bbox"] = bbox if config["srs"] != 'EPSG:3857' \
         else llbbox_to_mercator([float(coord) for coord in bbox])
     config["title"] = layer.title
     config["queryable"] = True
 
     if layer.storeType == "remoteStore":
-        service = layer.remote_service
-        source_params = {
-            "ptype": service.ptype,
-            "remote": True,
-            "url": service.service_url,
-            "name": service.name,
-            "title": "[R] %s" % service.title}
+        # service = layer.remote_service
+        # source_params = {
+        #     "ptype": service.ptype,
+        #     "remote": True,
+        #     "url": service.service_url,
+        #     "name": service.name,
+        #     "title": "[R] %s" % service.title}
         maplayer = GXPLayer(
             name=layer.alternate,
             ows_url=layer.ows_url,
             layer_params=json.dumps(config),
-            source_params=json.dumps(source_params))
+            # source_params=json.dumps(source_params)
+        )
     else:
         maplayer = GXPLayer(
             name=layer.alternate,
@@ -679,7 +820,7 @@ def layer_metadata(
         projection=getattr(
             settings,
             'DEFAULT_MAP_CRS',
-            'EPSG:900913'))
+            'EPSG:3857'))
 
     NON_WMS_BASE_LAYERS = [
         la for la in default_map_config(request)[1] if la.ows_url is None]
@@ -800,7 +941,7 @@ def layer_metadata(
             la = Attribute.objects.get(id=int(form['id'].id))
             la.description = form["description"]
             la.attribute_label = form["attribute_label"]
-            la.visible = form["visible"]
+            la.visible = True if form["attribute_label"] else False  # form["visible"]
             la.display_order = form["display_order"]
             la.save()
 
@@ -839,7 +980,7 @@ def layer_metadata(
                     build_slack_message_layer(
                         "layer_edit", the_layer))
             except BaseException:
-                print "Could not send slack message."
+                logger.error("Could not send slack message.")
 
         if not ajax:
             return HttpResponseRedirect(
@@ -888,17 +1029,19 @@ def layer_metadata(
 
     if settings.ADMIN_MODERATE_UPLOADS:
         if not request.user.is_superuser:
-            layer_form.fields['is_published'].widget.attrs.update({'disabled': 'true'})
+            layer_form.fields['is_published'].widget.attrs.update(
+                {'disabled': 'true'})
 
             can_change_metadata = request.user.has_perm(
                 'change_resourcebase_metadata',
                 layer.get_self_resource())
             try:
                 is_manager = request.user.groupmember_set.all().filter(role='manager').exists()
-            except:
+            except BaseException:
                 is_manager = False
             if not is_manager or not can_change_metadata:
-                layer_form.fields['is_approved'].widget.attrs.update({'disabled': 'true'})
+                layer_form.fields['is_approved'].widget.attrs.update(
+                    {'disabled': 'true'})
 
     if poc is not None:
         layer_form.fields['poc'].initial = poc.id
@@ -937,7 +1080,7 @@ def layer_metadata(
             all_metadata_author_groups = chain(
                 request.user.group_list_all().distinct(),
                 GroupProfile.objects.exclude(access="private").exclude(access="public-invite"))
-        except:
+        except BaseException:
             all_metadata_author_groups = GroupProfile.objects.exclude(
                 access="private").exclude(access="public-invite")
         [metadata_author_groups.append(item) for item in all_metadata_author_groups
@@ -954,7 +1097,7 @@ def layer_metadata(
         "tkeywords_form": tkeywords_form,
         "viewer": viewer,
         "preview": getattr(settings, 'GEONODE_CLIENT_LAYER_PREVIEW_LIBRARY', 'geoext'),
-        "crs": getattr(settings, 'DEFAULT_MAP_CRS', 'EPSG:900913'),
+        "crs": getattr(settings, 'DEFAULT_MAP_CRS', 'EPSG:3857'),
         "metadataxsl": metadataxsl,
         "freetext_readonly": getattr(
             settings,
@@ -1098,7 +1241,20 @@ def layer_remove(request, layername, template='layers/layer_remove.html'):
     if (request.method == 'POST'):
         try:
             with transaction.atomic():
-                delete_layer.delay(object_id=layer.id)
+                # Using Tastypie
+                # from geonode.api.resourcebase_api import LayerResource
+                # res = LayerResource()
+                # request_bundle = res.build_bundle(request=request)
+                # layer_bundle = res.build_bundle(request=request, obj=layer)
+                # layer_json = res.serialize(None,
+                #                            res.full_dehydrate(layer_bundle),
+                #                            "application/json")
+                # delete_layer.delay(instance=layer_json)
+                result = delete_layer.delay(layer_id=layer.id)
+                result.wait(10)
+        except TimeoutError:
+            # traceback.print_exc()
+            pass
         except Exception as e:
             traceback.print_exc()
             message = '{0}: {1}.'.format(
@@ -1170,7 +1326,7 @@ def layer_thumbnail(request, layername):
         try:
             try:
                 preview = json.loads(request.body).get('preview', None)
-            except:
+            except BaseException:
                 preview = None
 
             if preview and preview == 'react':
