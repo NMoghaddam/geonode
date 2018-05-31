@@ -80,7 +80,7 @@ try:
     ALLOWED_HOSTS = ast.literal_eval(os.getenv('ALLOWED_HOSTS'))
 except ValueError:
     # fallback to regular list of values separated with misc chars
-    ALLOWED_HOSTS = ['localhost', ] if os.getenv('ALLOWED_HOSTS') is None \
+    ALLOWED_HOSTS = ['localhost', 'django', 'geonode'] if os.getenv('ALLOWED_HOSTS') is None \
         else re.split(r' *[,|:|;] *', os.getenv('ALLOWED_HOSTS'))
 
 # AUTH_IP_WHITELIST property limits access to users/groups REST endpoints
@@ -745,7 +745,7 @@ OGC_SERVER = {
         # 'datastore',
         'DATASTORE': '',
         'PG_GEOGIG': False,
-        #'CACHE': ".cache"  # local cache file to for HTTP requests
+        # 'CACHE': ".cache"  # local cache file to for HTTP requests
         'TIMEOUT': 10  # number of seconds to allow for HTTP requests
     }
 }
@@ -895,16 +895,16 @@ DEFAULT_MAP_CENTER = (0, 0)
 # maximum zoom is between 12 and 15 (for Google Maps, coverage varies by area)
 DEFAULT_MAP_ZOOM = 0
 
-ALT_OSM_BASEMAPS = os.environ.get('ALT_OSM_BASEMAPS', False)
-CARTODB_BASEMAPS = os.environ.get('CARTODB_BASEMAPS', False)
-STAMEN_BASEMAPS = os.environ.get('STAMEN_BASEMAPS', False)
-THUNDERFOREST_BASEMAPS = os.environ.get('THUNDERFOREST_BASEMAPS', False)
+ALT_OSM_BASEMAPS = ast.literal_eval(os.environ.get('ALT_OSM_BASEMAPS', 'False'))
+CARTODB_BASEMAPS = ast.literal_eval(os.environ.get('CARTODB_BASEMAPS', 'False'))
+STAMEN_BASEMAPS = ast.literal_eval(os.environ.get('STAMEN_BASEMAPS', 'False'))
+THUNDERFOREST_BASEMAPS = ast.literal_eval(os.environ.get('THUNDERFOREST_BASEMAPS', 'False'))
 MAPBOX_ACCESS_TOKEN = os.environ.get('MAPBOX_ACCESS_TOKEN', None)
 BING_API_KEY = os.environ.get('BING_API_KEY', None)
 GOOGLE_API_KEY = os.environ.get('GOOGLE_API_KEY', None)
 
 # handle timestamps like 2017-05-30 16:04:00.719 UTC
-if django.VERSION[0] == 1 and django.VERSION[1] >= 11:
+if django.VERSION[0] == 1 and django.VERSION[1] >= 9:
     _DATETIME_INPUT_FORMATS = ['%Y-%m-%d %H:%M:%S.%f %Z', '%Y-%m-%dT%H:%M:%S.%f', '%Y-%m-%dT%H:%M:%S%Z']
 else:
     _DATETIME_INPUT_FORMATS = ('%Y-%m-%d %H:%M:%S.%f %Z', '%Y-%m-%dT%H:%M:%S.%f', '%Y-%m-%dT%H:%M:%S%Z')
@@ -1246,7 +1246,7 @@ if NOTIFICATION_ENABLED:
 """
 # Disabling the heartbeat because workers seems often disabled in flower,
 # thanks to http://stackoverflow.com/a/14831904/654755
-BROKER_HEARTBEAT=0
+BROKER_HEARTBEAT = 0
 
 # Avoid long running and retried tasks to be run over-and-over again.
 BROKER_TRANSPORT_OPTIONS = {
@@ -1256,17 +1256,20 @@ BROKER_TRANSPORT_OPTIONS = {
     'visibility_timeout': 86400
 }
 
-ASYNC_SIGNALS = False
+ASYNC_SIGNALS = ast.literal_eval(os.environ.get('ASYNC_SIGNALS', 'False'))
 RABBITMQ_SIGNALS_BROKER_URL = 'amqp://localhost:5672'
 REDIS_SIGNALS_BROKER_URL = 'redis://localhost:6379/0'
 LOCAL_SIGNALS_BROKER_URL = 'memory://'
+
 if ASYNC_SIGNALS:
-    _BROKER_URL = RABBITMQ_SIGNALS_BROKER_URL
-    # _BROKER_URL = REDIS_SIGNALS_BROKER_URL
+    _BROKER_URL = os.environ.get('BROKER_URL', RABBITMQ_SIGNALS_BROKER_URL)
+    # _BROKER_URL =  = os.environ.get('BROKER_URL', REDIS_SIGNALS_BROKER_URL)
+
     CELERY_RESULT_BACKEND = _BROKER_URL
 else:
     _BROKER_URL = LOCAL_SIGNALS_BROKER_URL
-BROKER_URL = os.environ.get('BROKER_URL', _BROKER_URL)
+
+BROKER_URL = _BROKER_URL
 
 CELERY_RESULT_PERSISTENT = False
 
@@ -1339,8 +1342,8 @@ CELERY_SEND_TASK_SENT_EVENT = True
 
 # AWS S3 Settings
 
-S3_STATIC_ENABLED = os.environ.get('S3_STATIC_ENABLED', False)
-S3_MEDIA_ENABLED = os.environ.get('S3_MEDIA_ENABLED', False)
+S3_STATIC_ENABLED = ast.literal_eval(os.environ.get('S3_STATIC_ENABLED', 'False'))
+S3_MEDIA_ENABLED = ast.literal_eval(os.environ.get('S3_MEDIA_ENABLED', 'False'))
 
 # Required to run Sync Media to S3
 AWS_BUCKET_NAME = os.environ.get('S3_BUCKET_NAME', '')
@@ -1489,6 +1492,61 @@ ACCOUNT_CONFIRM_EMAIL_ON_GET = True
 ACCOUNT_EMAIL_REQUIRED = True
 ACCOUNT_EMAIL_VERIFICATION = 'optional'
 SOCIALACCOUNT_ADAPTER = 'geonode.people.adapters.SocialAccountAdapter'
+
+SOCIALACCOUNT_AUTO_SIGNUP = False
+
+# Uncomment this to enable Linkedin and Facebook login
+# INSTALLED_APPS += (
+#    'allauth.socialaccount.providers.linkedin_oauth2',
+#    'allauth.socialaccount.providers.facebook',
+# )
+
+SOCIALACCOUNT_PROVIDERS = {
+    'linkedin_oauth2': {
+        'SCOPE': [
+            'r_emailaddress',
+            'r_basicprofile',
+        ],
+        'PROFILE_FIELDS': [
+            'emailAddress',
+            'firstName',
+            'headline',
+            'id',
+            'industry',
+            'lastName',
+            'pictureUrl',
+            'positions',
+            'publicProfileUrl',
+            'location',
+            'specialties',
+            'summary',
+        ]
+    },
+    'facebook': {
+        'METHOD': 'oauth2',
+        'SCOPE': [
+            'email',
+            'public_profile',
+        ],
+        'FIELDS': [
+            'id',
+            'email',
+            'name',
+            'first_name',
+            'last_name',
+            'verified',
+            'locale',
+            'timezone',
+            'link',
+            'gender',
+        ]
+    },
+}
+
+SOCIALACCOUNT_PROFILE_EXTRACTORS = {
+    "facebook": "geonode.people.profileextractors.FacebookExtractor",
+    "linkedin_oauth2": "geonode.people.profileextractors.LinkedInExtractor",
+}
 
 INVITATIONS_ADAPTER = ACCOUNT_ADAPTER
 

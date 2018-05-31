@@ -85,10 +85,9 @@ from geonode.utils import build_social_links
 from geonode.base.views import batch_modify
 from geonode.base.models import Thesaurus
 from geonode.maps.models import Map
-from geonode.geoserver.helpers import (cascading_delete,
-                                       gs_catalog,
+from geonode.geoserver.helpers import (gs_catalog,
                                        ogc_server_settings,
-                                       set_layer_style)
+                                       set_layer_style)  # cascading_delete,
 from .tasks import delete_layer
 
 if check_ogc_backend(geoserver.BACKEND_PACKAGE):
@@ -356,6 +355,7 @@ def layer_detail(request, layername, template='layers/layer_detail.html'):
     config["bbox"] = decimal_encode(
         bbox_to_projection([float(coord) for coord in layer_bbox] + [layer.srid, ],
                            target_srid=int(srs.split(":")[1]))[:4])
+
     config["capability"] = {
         "abstract": layer.abstract,
         "name": layer.alternate,
@@ -411,14 +411,54 @@ def layer_detail(request, layername, template='layers/layer_detail.html'):
             [float(coord) for coord in layer_bbox] + [layer.srid, ], target_srid=4326)[:4])
     }
 
+    all_times = None
+    if check_ogc_backend(geoserver.BACKEND_PACKAGE):
+        from geonode.geoserver.views import get_capabilities
+        workspace, layername = layer.alternate.split(
+            ":") if ":" in layer.alternate else (None, layer.alternate)
+        # WARNING Please make sure to have enabled DJANGO CACHE as per
+        # https://docs.djangoproject.com/en/2.0/topics/cache/#filesystem-caching
+        wms_capabilities_resp = get_capabilities(
+            request, layer.id, tolerant=True)
+        if wms_capabilities_resp.status_code >= 200 and wms_capabilities_resp.status_code < 400:
+            wms_capabilities = wms_capabilities_resp.getvalue()
+            if wms_capabilities:
+                import xml.etree.ElementTree as ET
+                e = ET.fromstring(wms_capabilities)
+                for atype in e.findall(
+                        "./[Name='%s']/Extent[@name='time']" % (layername)):
+                    dim_name = atype.get('name')
+                    if dim_name:
+                        dim_name = str(dim_name).lower()
+                        if dim_name == 'time':
+                            dim_values = atype.text
+                            if dim_values:
+                                all_times = dim_values.split(",")
+                                break
+        if all_times:
+            config["capability"]["dimensions"] = {
+                "time": {
+                    "name": "time",
+                    "units": "ISO8601",
+                    "unitsymbol": None,
+                    "nearestVal": False,
+                    "multipleVal": False,
+                    "current": False,
+                    "default": "current",
+                    "values": all_times
+                }
+            }
+
     if layer.storeType == "remoteStore":
         service = layer.remote_service
-        source_params = {
-            "ptype": service.ptype,
-            "remote": True,
-            "url": service.service_url,
-            "name": service.name,
-            "title": "[R] %s" % service.title}
+        source_params = {}
+        if service.type in ('REST_MAP', 'REST_IMG'):
+            source_params = {
+                "ptype": service.ptype,
+                "remote": True,
+                "url": service.service_url,
+                "name": service.name,
+                "title": "[R] %s" % service.title}
         maplayer = GXPLayer(
             name=layer.alternate,
             ows_url=layer.ows_url,
@@ -697,10 +737,11 @@ def load_layer_data(request, template='layers/layer_detail.html'):
 
         # loop the dictionary based on the values on the list and add the properties
         # in the dictionary (if doesn't exist) together with the value
+        from collections import Iterable
         for i in range(len(decoded_features)):
             for key, value in decoded_features[i]['properties'].iteritems():
                 if value != '' and isinstance(value, (string_types, int, float)) and (
-                        '/load_layer_data' not in value):
+                        (isinstance(value, Iterable) and '/load_layer_data' not in value) or value):
                     properties[key].append(value)
 
         for key in properties:
@@ -793,12 +834,14 @@ def layer_metadata(
 
     if layer.storeType == "remoteStore":
         service = layer.remote_service
-        source_params = {
-            "ptype": service.ptype,
-            "remote": True,
-            "url": service.service_url,
-            "name": service.name,
-            "title": "[R] %s" % service.title}
+        source_params = {}
+        if service.type in ('REST_MAP', 'REST_IMG'):
+            source_params = {
+                "ptype": service.ptype,
+                "remote": True,
+                "url": service.service_url,
+                "name": service.name,
+                "title": "[R] %s" % service.title}
         maplayer = GXPLayer(
             name=layer.alternate,
             ows_url=layer.ows_url,
@@ -1124,9 +1167,9 @@ def layer_change_poc(request, ids, template='layers/layer_change_poc.html'):
     layers = Layer.objects.filter(id__in=ids.split('_'))
 
     if settings.MONITORING_ENABLED:
-        for l in layers:
-            if hasattr(l, 'alternate'):
-                request.add_resource('layer', l.alternate)
+        for _l in layers:
+            if hasattr(_l, 'alternate'):
+                request.add_resource('layer', _l.alternate)
     if request.method == 'POST':
         form = PocForm(request.POST)
         if form.is_valid():
@@ -1154,13 +1197,12 @@ def layer_replace(request, layername, template='layers/layer_replace.html'):
     if request.method == 'GET':
         ctx = {
             'charsets': CHARSETS,
-            'layer': layer,
+            'resource': layer.resourcebase_ptr,
             'is_featuretype': layer.is_vector(),
             'is_layer': True,
         }
         return render(request, template, context=ctx)
     elif request.method == 'POST':
-
         form = LayerUploadForm(request.POST, request.FILES)
         tempdir = None
         out = {}
@@ -1177,24 +1219,37 @@ def layer_replace(request, layername, template='layers/layer_replace.html'):
                     out['errors'] = _(
                         "You are attempting to replace a raster layer with a vector.")
                 else:
-                    if check_ogc_backend(geoserver.BACKEND_PACKAGE):
-                        # delete geoserver's store before upload
-                        cat = gs_catalog
-                        cascading_delete(cat, layer.typename)
-                        out['ogc_backend'] = geoserver.BACKEND_PACKAGE
-                    elif check_ogc_backend(qgis_server.BACKEND_PACKAGE):
-                        try:
-                            qgis_layer = QGISServerLayer.objects.get(
-                                layer=layer)
-                            qgis_layer.delete()
-                        except QGISServerLayer.DoesNotExist:
-                            pass
-                        out['ogc_backend'] = qgis_server.BACKEND_PACKAGE
+                    try:
+                        # if check_ogc_backend(geoserver.BACKEND_PACKAGE):
+                        #     # delete geoserver's store before upload
+                        #     cat = gs_catalog
+                        #     cascading_delete(cat, layer.alternate)
+                        #     out['ogc_backend'] = geoserver.BACKEND_PACKAGE
+                        if check_ogc_backend(qgis_server.BACKEND_PACKAGE):
+                            try:
+                                qgis_layer = QGISServerLayer.objects.get(
+                                    layer=layer)
+                                qgis_layer.delete()
+                            except QGISServerLayer.DoesNotExist:
+                                pass
+                            out['ogc_backend'] = qgis_server.BACKEND_PACKAGE
+                    except BaseException:
+                        pass
 
                     saved_layer = file_upload(
                         base_file,
+                        title=layer.title,
+                        abstract=layer.abstract,
+                        # is_approved=layer.is_approved,
+                        # is_published=layer.is_published,
                         name=layer.name,
-                        user=request.user,
+                        user=layer.owner,
+                        # user=request.user,
+                        license=layer.license.name if layer.license else None,
+                        category=layer.category,
+                        keywords=list(layer.keywords.all()),
+                        regions=list(layer.regions.values_list('name', flat=True)),
+                        # date=layer.date,
                         overwrite=True,
                         charset=form.cleaned_data["charset"],
                     )
@@ -1444,6 +1499,6 @@ def layer_batch_metadata(request, ids):
 
 
 def layer_view_counter(layer_id, viewer):
-    l = Layer.objects.get(id=layer_id)
-    u = get_user_model().objects.get(username=viewer)
-    l.view_count_up(u, do_local=True)
+    _l = Layer.objects.get(id=layer_id)
+    _u = get_user_model().objects.get(username=viewer)
+    _l.view_count_up(_u, do_local=True)

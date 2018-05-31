@@ -746,7 +746,12 @@ class LayerResource(CommonModelApi):
             if hasattr(obj, 'storeType'):
                 formatted_obj['store_type'] = obj.storeType
                 if obj.storeType == 'remoteStore' and hasattr(obj, 'remote_service'):
-                    formatted_obj['online'] = (obj.remote_service.probe == 200)
+                    if obj.remote_service:
+                        formatted_obj['online'] = (obj.remote_service.probe == 200)
+                    else:
+                        formatted_obj['online'] = False
+
+            formatted_obj['gtype'] = self.dehydrate_gtype(bundle)
 
             # put the object on the response stack
             formatted_objects.append(formatted_obj)
@@ -770,6 +775,9 @@ class LayerResource(CommonModelApi):
 
         return dehydrated
 
+    def dehydrate_gtype(self, bundle):
+        return bundle.obj.gtype
+
     def populate_object(self, obj):
         """Populate results with necessary fields
 
@@ -782,13 +790,13 @@ class LayerResource(CommonModelApi):
             # Default style
             try:
                 obj.qgis_default_style = obj.qgis_layer.default_style
-            except:
+            except BaseException:
                 obj.qgis_default_style = None
 
             # Styles
             try:
                 obj.qgis_styles = obj.qgis_layer.styles
-            except:
+            except BaseException:
                 obj.qgis_styles = []
         return obj
 
@@ -835,7 +843,7 @@ class LayerResource(CommonModelApi):
 
             layer_id = kwargs['id']
             layer = Layer.objects.get(id=layer_id)
-        except:
+        except BaseException:
             return http.HttpBadRequest(reason=reason)
 
         from geonode.qgis_server.views import default_qml_style

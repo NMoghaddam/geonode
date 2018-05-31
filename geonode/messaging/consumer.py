@@ -100,7 +100,10 @@ class Consumer(ConsumerMixin):
         except Layer.DoesNotExist as err:
             logger.debug(err)
             return
+        # try:
         geoserver_post_save_local(layer)
+        # except Exception, err:
+        #     logger.error("Cannot handle geoserver message: %s", err, exc_info=err)
         # Not sure if we need to send ack on this fanout version.
         message.ack()
         logger.debug("on_geoserver_messages: finished")
@@ -129,7 +132,7 @@ class Consumer(ConsumerMixin):
         try:
             _update_layer_data(body, self.last_message)
             self.last_message = json.loads(body)
-        except:
+        except BaseException:
             logger.info("Could not encode message {!r}".format(body))
         message.ack()
         logger.debug("on_geoserver_catalog: finished")
@@ -140,7 +143,7 @@ class Consumer(ConsumerMixin):
         try:
             _update_layer_data(body, self.last_message)
             self.last_message = json.loads(body)
-        except:
+        except BaseException:
             logger.info("Could not encode message {!r}".format(body))
         message.ack()
         logger.debug("on_geoserver_data: finished")

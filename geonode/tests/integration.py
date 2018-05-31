@@ -55,7 +55,7 @@ from geoserver.catalog import FailedRequestError
 # from geonode.security.models import *
 from geonode.contrib import geotiffio
 from geonode.decorators import on_ogc_backend
-from geonode.base.models import TopicCategory
+from geonode.base.models import TopicCategory, Link
 from geonode.layers.models import Layer
 from geonode.maps.models import Map
 from geonode import GeoNodeException, geoserver, qgis_server
@@ -95,6 +95,7 @@ def zip_dir(basedir, archivename):
                 absfn = os.path.join(root, fn)
                 zfn = absfn[len(basedir)+len(os.sep):]  # XXX: relative path
                 z.write(absfn, zfn)
+
 
 """
  HOW TO RUN THE TESTS
@@ -570,13 +571,13 @@ class GeoNodeMapTest(GeoNodeLiveTestSupport):
         try:
             # with self.assertRaises(GeoNodeException):
             thefile = file_upload(thefile, overwrite=True)
-        except GeoNodeException, e:
+        except GeoNodeException as e:
             self.assertEqual(str(e), "Invalid Projection. Layer is missing CRS!")
         finally:
             # Clean up and completely delete the layer
             try:
                 thefile.delete()
-            except:
+            except BaseException:
                 pass
 
     @timeout_decorator.timeout(LOCAL_TIMEOUT)
@@ -733,9 +734,10 @@ class GeoNodeMapTest(GeoNodeLiveTestSupport):
 
             # Verify that the styles were deleted
             for style in styles:
-                s = gs_cat.get_style(style.name, workspace=settings.DEFAULT_WORKSPACE) or \
-                    gs_cat.get_style(style.name)
-                assert s is None
+                if style and style.name:
+                    s = gs_cat.get_style(style.name, workspace=settings.DEFAULT_WORKSPACE) or \
+                        gs_cat.get_style(style.name)
+                    assert s is None
 
             # Verify that the store was deleted
             ds = gs_cat.get_store(store_name)
@@ -920,9 +922,13 @@ class GeoNodeMapTest(GeoNodeLiveTestSupport):
                 self.assertEquals(response_dict['success'], True)
                 # Get a Layer object for the newly created layer.
                 new_vector_layer = Layer.objects.get(pk=vector_layer.pk)
-                # FIXME(Ariel): Check the typename does not change.
 
-                # Test the replaced layer is indeed different from the original layer
+                # Test the replaced layer metadata is equal to the original layer
+                self.assertEqual(vector_layer.name, new_vector_layer.name)
+                self.assertEqual(vector_layer.title, new_vector_layer.title)
+                self.assertEqual(vector_layer.alternate, new_vector_layer.alternate)
+
+                # Test the replaced layer bbox is indeed different from the original layer
                 self.assertNotEqual(vector_layer.bbox_x0, new_vector_layer.bbox_x0)
                 self.assertNotEqual(vector_layer.bbox_x1, new_vector_layer.bbox_x1)
                 self.assertNotEqual(vector_layer.bbox_y0, new_vector_layer.bbox_y0)
@@ -950,7 +956,7 @@ class GeoNodeMapTest(GeoNodeLiveTestSupport):
                     raster_layer.delete()
                 if new_vector_layer:
                     new_vector_layer.delete()
-            except:
+            except BaseException:
                 # tb = traceback.format_exc()
                 # logger.warning(tb)
                 pass
@@ -973,6 +979,7 @@ class GeoNodeMapTest(GeoNodeLiveTestSupport):
             self.assertIsNotNone(lyr)
             self.assertEqual(lyr.name, "test_san_andres_y_providencia_administrative")
             self.assertEqual(lyr.title, "Test San Andres y Providencia Administrative")
+
             default_keywords = [
                 u'import',
                 u'san andreas',
@@ -1378,6 +1385,16 @@ class GeoNodeGeoServerSync(GeoNodeLiveTestSupport):
                     attribute.description,
                     '%s_description' % attribute.attribute
                 )
+
+            links = Link.objects.filter(resource=layer.resourcebase_ptr)
+            self.assertIsNotNone(links)
+            self.assertTrue(len(links) > 7)
+
+            original_data_links = [ll for ll in links if 'original' == ll.link_type]
+            self.assertEquals(len(original_data_links), 1)
+
+            resp = self.client.get(original_data_links[0].url)
+            self.assertEquals(resp.status_code, 200)
         finally:
             # Clean up and completely delete the layers
             layer.delete()
@@ -1657,6 +1674,7 @@ class LayersStylesApiInteractionTests(
         self.assertValidJSONResponse(resp)
         obj = self.deserialize(resp)
         # Take default style url from Layer detail info
+
         default_style_url = obj['default_style']
         resp = self.api_client.get(default_style_url)
         self.assertValidJSONResponse(resp)

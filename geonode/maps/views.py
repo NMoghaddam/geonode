@@ -462,7 +462,7 @@ def map_embed_widget(request, mapid,
     else:
         map_bbox = llbbox_to_mercator([float(coord) for coord in map_bbox])
 
-    if map_bbox is not None:
+    if map_bbox and len(map_bbox) >= 4:
         minx, miny, maxx, maxy = [float(coord) for coord in map_bbox]
         x = (minx + maxx) / 2
         y = (miny + maxy) / 2
@@ -827,10 +827,6 @@ def add_layers_to_map_config(
             # bad layer, skip
             continue
 
-        if not layer.is_published:
-            # invisible layer, skip inclusion
-            continue
-
         if not request.user.has_perm(
                 'view_resourcebase',
                 obj=layer.get_self_resource()):
@@ -947,14 +943,54 @@ def add_layers_to_map_config(
                 [float(coord) for coord in layer_bbox] + [layer.srid, ], target_srid=4326)[:4])
         }
 
+        all_times = None
+        if check_ogc_backend(geoserver.BACKEND_PACKAGE):
+            from geonode.geoserver.views import get_capabilities
+            workspace, layername = layer.alternate.split(
+                ":") if ":" in layer.alternate else (None, layer.alternate)
+            # WARNING Please make sure to have enabled DJANGO CACHE as per
+            # https://docs.djangoproject.com/en/2.0/topics/cache/#filesystem-caching
+            wms_capabilities_resp = get_capabilities(
+                request, layer.id, tolerant=True)
+            if wms_capabilities_resp.status_code >= 200 and wms_capabilities_resp.status_code < 400:
+                wms_capabilities = wms_capabilities_resp.getvalue()
+                if wms_capabilities:
+                    import xml.etree.ElementTree as ET
+                    e = ET.fromstring(wms_capabilities)
+                    for atype in e.findall(
+                            "./[Name='%s']/Extent[@name='time']" % (layername)):
+                        dim_name = atype.get('name')
+                        if dim_name:
+                            dim_name = str(dim_name).lower()
+                            if dim_name == 'time':
+                                dim_values = atype.text
+                                if dim_values:
+                                    all_times = dim_values.split(",")
+                                    break
+            if all_times:
+                config["capability"]["dimensions"] = {
+                    "time": {
+                        "name": "time",
+                        "units": "ISO8601",
+                        "unitsymbol": None,
+                        "nearestVal": False,
+                        "multipleVal": False,
+                        "current": False,
+                        "default": "current",
+                        "values": all_times
+                    }
+                }
+
         if layer.storeType == "remoteStore":
             service = layer.remote_service
-            source_params = {
-                "ptype": service.ptype,
-                "remote": True,
-                "url": service.service_url,
-                "name": service.name,
-                "title": "[R] %s" % service.title}
+            source_params = {}
+            if service.type in ('REST_MAP', 'REST_IMG'):
+                source_params = {
+                    "ptype": service.ptype,
+                    "remote": True,
+                    "url": service.service_url,
+                    "name": service.name,
+                    "title": "[R] %s" % service.title}
             maplayer = MapLayer(map=map_obj,
                                 name=layer.alternate,
                                 ows_url=layer.ows_url,
@@ -982,7 +1018,7 @@ def add_layers_to_map_config(
 
         layers.append(maplayer)
 
-    if bbox is not None:
+    if bbox and len(bbox) >= 4:
         minx, maxx, miny, maxy = [float(coord) for coord in bbox]
         x = (minx + maxx) / 2
         y = (miny + maxy) / 2
@@ -1062,7 +1098,7 @@ def map_download(request, mapid, template='maps/map_download.html'):
             if j_layer["service"] is None:
                 j_layers.remove(j_layer)
                 continue
-            if (len([l for l in j_layers if l == j_layer])) > 1:
+            if (len([_l for _l in j_layers if _l == j_layer])) > 1:
                 j_layers.remove(j_layer)
         mapJson = json.dumps(j_map)
 
@@ -1105,7 +1141,7 @@ def map_download(request, mapid, template='maps/map_download.html'):
                 else:
                     # we need to add the layer only once
                     if len(
-                            [l for l in downloadable_layers if l.name == lyr.name]) == 0:
+                            [_l for _l in downloadable_layers if _l.name == lyr.name]) == 0:
                         downloadable_layers.append(lyr)
 
     return render(request, template, context={
@@ -1238,7 +1274,7 @@ def snapshot_config(snapshot, map_obj, user, access_token):
     snapshot = get_object_or_404(MapSnapshot, pk=decodedid)
     if snapshot.map == map_obj.map:
         config = json.loads(clean_config(snapshot.config))
-        layers = [l for l in config["map"]["layers"]]
+        layers = [_l for _l in config["map"]["layers"]]
         sources = config["sources"]
         maplayers = []
         for ordering, layer in enumerate(layers):
@@ -1254,10 +1290,10 @@ def snapshot_config(snapshot, map_obj, user, access_token):
 # map_obj, layer, config["sources"][layer["source"]], ordering))
         config['map']['layers'] = [
             snaplayer_config(
-                l,
+                _l,
                 sources,
                 user,
-                access_token) for l in maplayers]
+                access_token) for _l in maplayers]
     else:
         config = map_obj.viewer_json(user, access_token)
     return config
