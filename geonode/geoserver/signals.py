@@ -212,7 +212,7 @@ def geoserver_post_save_local(instance, *args, **kwargs):
     set_styles(instance, gs_catalog)
 
     # set SLD
-    sld = instance.default_style.sld_body
+    sld = instance.default_style.sld_body if instance.default_style else None
     if sld:
         set_layer_style(instance, instance.alternate, sld)
 
@@ -513,7 +513,8 @@ def geoserver_post_save_local(instance, *args, **kwargs):
                                )
                                )
 
-    ogc_wms_path = '%s/ows' % instance.workspace
+    # ogc_wms_path = '%s/ows' % instance.workspace
+    ogc_wms_path = 'ows'
     ogc_wms_url = urljoin(ogc_server_settings.public_url, ogc_wms_path)
     ogc_wms_name = 'OGC WMS: %s Service' % instance.workspace
     Link.objects.get_or_create(resource=instance.resourcebase_ptr,
@@ -528,7 +529,8 @@ def geoserver_post_save_local(instance, *args, **kwargs):
                                )
 
     if instance.storeType == "dataStore":
-        ogc_wfs_path = '%s/wfs' % instance.workspace
+        # ogc_wfs_path = '%s/wfs' % instance.workspace
+        ogc_wfs_path = 'wfs'
         ogc_wfs_url = urljoin(ogc_server_settings.public_url, ogc_wfs_path)
         ogc_wfs_name = 'OGC WFS: %s Service' % instance.workspace
         Link.objects.get_or_create(resource=instance.resourcebase_ptr,
@@ -543,7 +545,8 @@ def geoserver_post_save_local(instance, *args, **kwargs):
                                    )
 
     if instance.storeType == "coverageStore":
-        ogc_wcs_path = '%s/wcs' % instance.workspace
+        # ogc_wcs_path = '%s/wcs' % instance.workspace
+        ogc_wcs_path = 'wcs'
         ogc_wcs_url = urljoin(ogc_server_settings.public_url, ogc_wcs_path)
         ogc_wcs_name = 'OGC WCS: %s Service' % instance.workspace
         Link.objects.get_or_create(resource=instance.resourcebase_ptr,
@@ -586,6 +589,11 @@ def geoserver_post_save_local(instance, *args, **kwargs):
     # NOTTODO by simod: we should not do this!
     # need to be removed when fixing #2015
     catalogue_post_save(instance, Layer)
+
+    # Updating HAYSTACK Indexes if needed
+    if settings.HAYSTACK_SEARCH:
+        from django.core.management import call_command
+        call_command('update_index')
 
 
 def geoserver_pre_save_maplayer(instance, sender, **kwargs):

@@ -357,10 +357,10 @@ INSTALLED_APPS = (
     'bootstrap3_datetime',
     'django_extensions',
     'django_basic_auth',
-    # 'haystack',
     'autocomplete_light',
     'mptt',
-    # 'modeltranslation',
+    # 'crispy_forms',
+
     # 'djkombu',
     # 'djcelery',
     # 'kombu.transport.django',
@@ -394,9 +394,20 @@ INSTALLED_APPS = (
     'allauth.account',
     'allauth.socialaccount',
 
+    # Django REST Framework
+    'rest_framework',
+
     # GeoNode
     'geonode',
 ) + GEONODE_APPS
+
+REST_FRAMEWORK = {
+    # Use Django's standard `django.contrib.auth` permissions,
+    # or allow read-only access for unauthenticated users.
+    'DEFAULT_PERMISSION_CLASSES': [
+        'rest_framework.permissions.DjangoModelPermissionsOrAnonReadOnly'
+    ]
+}
 
 # Documents application
 ALLOWED_DOCUMENT_TYPES = [
@@ -418,7 +429,7 @@ UNOCONV_ENABLE = strtobool(os.getenv('UNOCONV_ENABLE', 'False'))
 
 if UNOCONV_ENABLE:
     UNOCONV_EXECUTABLE = os.getenv('UNOCONV_EXECUTABLE', '/usr/bin/unoconv')
-    UNOCONV_TIMEOUT = os.getenv('UNOCONV_TIMEOUT', 30)  # seconds
+    UNOCONV_TIMEOUT = int(os.getenv('UNOCONV_TIMEOUT', 30))  # seconds
 
 LOGGING = {
     'version': 1,
@@ -763,10 +774,10 @@ OGC_SERVER = {
         % os.path.abspath(os.path.join(PROJECT_ROOT, os.pardir)),
         # Set to name of database in DATABASES dictionary to enable
         # 'datastore',
-        'DATASTORE': os.environ.get('DEFAULT_BACKEND_DATASTORE',''),
+        'DATASTORE': os.getenv('DEFAULT_BACKEND_DATASTORE',''),
         'PG_GEOGIG': False,
         # 'CACHE': ".cache"  # local cache file to for HTTP requests
-        'TIMEOUT': 10  # number of seconds to allow for HTTP requests
+        'TIMEOUT': int(os.getenv('OGC_REQUEST_TIMEOUT', '10'))  # number of seconds to allow for HTTP requests
     }
 }
 
@@ -775,12 +786,12 @@ USE_GEOSERVER = 'geonode.geoserver' in INSTALLED_APPS and OGC_SERVER['default'][
 # Uploader Settings
 DATA_UPLOAD_MAX_NUMBER_FIELDS = 100000
 UPLOADER = {
-    'BACKEND': 'geonode.rest',
+    'BACKEND': os.getenv('DEFAULT_BACKEND_UPLOADER', 'geonode.rest'),
     # 'BACKEND': 'geonode.importer',
     'OPTIONS': {
-        'TIME_ENABLED': False,
-        'MOSAIC_ENABLED': False,
-        'GEOGIG_ENABLED': False,
+        'TIME_ENABLED': strtobool(os.getenv('TIME_ENABLED', 'False')),
+        'MOSAIC_ENABLED': strtobool(os.getenv('MOSAIC_ENABLED', 'False')),
+        'GEOGIG_ENABLED': strtobool(os.getenv('GEOGIG_ENABLED', 'False')),
     },
     'SUPPORTED_CRS': [
         'EPSG:4326',
@@ -1042,16 +1053,18 @@ HAYSTACK_SEARCH = strtobool(os.getenv('HAYSTACK_SEARCH', 'False'))
 SKIP_PERMS_FILTER = strtobool(os.getenv('SKIP_PERMS_FILTER', 'False'))
 # Update facet counts from Haystack
 HAYSTACK_FACET_COUNTS = strtobool(os.getenv('HAYSTACK_FACET_COUNTS', 'True'))
-# HAYSTACK_CONNECTIONS = {
-#    'default': {
-#        'ENGINE': 'haystack.backends.elasticsearch_backend.'
-#        'ElasticsearchSearchEngine',
-#        'URL': 'http://127.0.0.1:9200/',
-#        'INDEX_NAME': 'geonode',
-#        },
-#    }
-# HAYSTACK_SIGNAL_PROCESSOR = 'haystack.signals.RealtimeSignalProcessor'
-# HAYSTACK_SEARCH_RESULTS_PER_PAGE = 20
+if HAYSTACK_SEARCH:
+    if 'haystack' not in INSTALLED_APPS:
+        INSTALLED_APPS += ('haystack', )
+    HAYSTACK_CONNECTIONS = {
+       'default': {
+           'ENGINE': 'haystack.backends.elasticsearch2_backend.Elasticsearch2SearchEngine',
+           'URL': os.getenv('HAYSTACK_ENGINE_URL', 'http://127.0.0.1:9200/'),
+           'INDEX_NAME': os.getenv('HAYSTACK_ENGINE_INDEX_NAME', 'haystack'),
+           },
+       }
+    HAYSTACK_SIGNAL_PROCESSOR = 'haystack.signals.RealtimeSignalProcessor'
+    HAYSTACK_SEARCH_RESULTS_PER_PAGE = int(os.getenv('HAYSTACK_SEARCH_RESULTS_PER_PAGE', '200'))
 
 # Available download formats
 DOWNLOAD_FORMATS_METADATA = [
@@ -1201,6 +1214,29 @@ CACHES = {
 GEONODE_CLIENT_LAYER_PREVIEW_LIBRARY = 'geoext'  # DEPRECATED use HOOKSET instead
 GEONODE_CLIENT_HOOKSET = "geonode.client.hooksets.GeoExtHookSet"
 
+# To enable the REACT based Client enable those
+"""
+if 'geonode-client' not in INSTALLED_APPS:
+    INSTALLED_APPS += ('geonode-client', )
+GEONODE_CLIENT_LAYER_PREVIEW_LIBRARY = 'react'  # DEPRECATED use HOOKSET instead
+GEONODE_CLIENT_HOOKSET = "geonode.client.hooksets.ReactHookSet"
+"""
+
+# To enable the Leaflet based Client enable those
+"""
+GEONODE_CLIENT_LAYER_PREVIEW_LIBRARY = 'leaflet'  # DEPRECATED use HOOKSET instead
+GEONODE_CLIENT_HOOKSET = "geonode.client.hooksets.LeafletHookSet"
+"""
+
+# To enable the MapLoom based Client enable those
+"""
+GEONODE_CLIENT_LAYER_PREVIEW_LIBRARY = 'maploom'  # DEPRECATED use HOOKSET instead
+GEONODE_CLIENT_HOOKSET = "geonode.client.hooksets.MaploomHookSet"
+CORS_ORIGIN_WHITELIST = (
+    HOSTNAME
+)
+"""
+
 SERVICE_UPDATE_INTERVAL = 0
 
 SEARCH_FILTERS = {
@@ -1289,7 +1325,8 @@ if ASYNC_SIGNALS:
 else:
     _BROKER_URL = LOCAL_SIGNALS_BROKER_URL
 
-BROKER_URL = _BROKER_URL
+# Note:BROKER_URL is deprecated in favour of CELERY_BROKER_URL
+CELERY_BROKER_URL = _BROKER_URL
 
 CELERY_RESULT_PERSISTENT = False
 
@@ -1302,8 +1339,8 @@ CELERY_TASK_IGNORE_RESULT = True
 
 # I use these to debug kombu crashes; we get a more informative message.
 CELERY_TASK_SERIALIZER = 'json'
-#CELERY_RESULT_SERIALIZER = 'json'
-CELERY_ACCEPT_CONTENT = ['json', 'pickle']
+CELERY_RESULT_SERIALIZER = 'json'
+CELERY_ACCEPT_CONTENT = ['json']
 
 # Set Tasks Queues
 # CELERY_TASK_DEFAULT_QUEUE = "default"
@@ -1321,9 +1358,17 @@ CELERY_TASK_QUEUES = (
     Queue('email', GEONODE_EXCHANGE, routing_key='email'),
 )
 
-if USE_GEOSERVER and ASYNC_SIGNALS:
-    from geonode.messaging.queues import QUEUES
-    CELERY_TASK_QUEUES += QUEUES
+if USE_GEOSERVER:
+    CELERY_TASK_QUEUES += (
+        Queue("broadcast", GEOSERVER_EXCHANGE, routing_key="#"),
+        Queue("email.events", GEOSERVER_EXCHANGE, routing_key="email"),
+        Queue("all.geoserver", GEOSERVER_EXCHANGE, routing_key="geoserver.#"),
+        Queue("geoserver.catalog", GEOSERVER_EXCHANGE, routing_key="geoserver.catalog"),
+        Queue("geoserver.data", GEOSERVER_EXCHANGE, routing_key="geoserver.catalog"),
+        Queue("geoserver.events", GEOSERVER_EXCHANGE, routing_key="geonode.geoserver"),
+        Queue("notifications.events", GEOSERVER_EXCHANGE, routing_key="notifications"),
+        Queue("geonode.layer.viewer", GEOSERVER_EXCHANGE, routing_key="geonode.viewer"),
+    )
 
 # CELERYBEAT_SCHEDULE = {
 #     ...
@@ -1385,19 +1430,6 @@ if S3_MEDIA_ENABLED:
     MEDIAFILES_LOCATION = 'media'
     DEFAULT_FILE_STORAGE = 'storages.backends.s3boto.S3BotoStorage'
     MEDIA_URL = "https://%s/%s/" % (AWS_S3_BUCKET_DOMAIN, MEDIAFILES_LOCATION)
-
-
-# djcelery.setup_loader()
-
-# There are 3 ways to override GeoNode settings:
-# 1. Using environment variables, if your changes to GeoNode are minimal.
-# 2. Creating a downstream project, if you are doing a lot of customization.
-# 3. Override settings in a local_settings.py file, legacy.
-# Load more settings from a file called local_settings.py if it exists
-try:
-    from geonode.local_settings import *  # flake8: noqa
-except ImportError:
-    pass
 
 
 # Load additonal basemaps, see geonode/contrib/api_basemap/README.md

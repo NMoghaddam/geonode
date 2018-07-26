@@ -87,7 +87,7 @@ from geonode.base.models import Thesaurus
 from geonode.maps.models import Map
 from geonode.geoserver.helpers import (gs_catalog,
                                        ogc_server_settings,
-                                       set_layer_style)  # cascading_delete,
+                                       set_layer_style)  # cascading_delete
 from .tasks import delete_layer
 
 if check_ogc_backend(geoserver.BACKEND_PACKAGE):
@@ -361,6 +361,7 @@ def layer_detail(request, layername, template='layers/layer_detail.html'):
         "name": layer.alternate,
         "title": layer.title,
         "queryable": True,
+        "storeType": layer.storeType,
         "bbox": {
             layer.srid: {
                 "srs": layer.srid,
@@ -574,14 +575,14 @@ def layer_detail(request, layername, template='layers/layer_detail.html'):
         # "online": (layer.remote_service.probe == 200) if layer.storeType == "remoteStore" else True
     }
 
-    if 'access_token' in request.session:
+    if request and 'access_token' in request.session:
         access_token = request.session['access_token']
     else:
         u = uuid.uuid1()
         access_token = u.hex
 
     context_dict["viewer"] = json.dumps(map_obj.viewer_json(
-        request.user, access_token, * (NON_WMS_BASE_LAYERS + [maplayer])))
+        request, * (NON_WMS_BASE_LAYERS + [maplayer])))
     context_dict["preview"] = getattr(
         settings,
         'GEONODE_CLIENT_LAYER_PREVIEW_LIBRARY',
@@ -1104,14 +1105,8 @@ def layer_metadata(
         author_form = ProfileForm(prefix="author")
         author_form.hidden = False
 
-    if 'access_token' in request.session:
-        access_token = request.session['access_token']
-    else:
-        u = uuid.uuid1()
-        access_token = u.hex
-
     viewer = json.dumps(map_obj.viewer_json(
-        request.user, access_token, * (NON_WMS_BASE_LAYERS + [maplayer])))
+        request, * (NON_WMS_BASE_LAYERS + [maplayer])))
 
     metadataxsl = False
     if "geonode.contrib.metadataxsl" in settings.INSTALLED_APPS:
@@ -1124,10 +1119,11 @@ def layer_metadata(
         try:
             all_metadata_author_groups = chain(
                 request.user.group_list_all().distinct(),
-                GroupProfile.objects.exclude(access="private"))
+                GroupProfile.objects.exclude(
+                    access="private").exclude(access="public-invite"))
         except BaseException:
             all_metadata_author_groups = GroupProfile.objects.exclude(
-                access="private")
+                access="private").exclude(access="public-invite")
         [metadata_author_groups.append(item) for item in all_metadata_author_groups
             if item not in metadata_author_groups]
 
@@ -1197,7 +1193,7 @@ def layer_replace(request, layername, template='layers/layer_replace.html'):
     if request.method == 'GET':
         ctx = {
             'charsets': CHARSETS,
-            'resource': layer.resourcebase_ptr,
+            'resource': layer,
             'is_featuretype': layer.is_vector(),
             'is_layer': True,
         }
@@ -1219,29 +1215,25 @@ def layer_replace(request, layername, template='layers/layer_replace.html'):
                     out['errors'] = _(
                         "You are attempting to replace a raster layer with a vector.")
                 else:
-                    try:
-                        # if check_ogc_backend(geoserver.BACKEND_PACKAGE):
-                        #     # delete geoserver's store before upload
-                        #     cat = gs_catalog
-                        #     cascading_delete(cat, layer.alternate)
-                        #     out['ogc_backend'] = geoserver.BACKEND_PACKAGE
-                        if check_ogc_backend(qgis_server.BACKEND_PACKAGE):
-                            try:
-                                qgis_layer = QGISServerLayer.objects.get(
-                                    layer=layer)
-                                qgis_layer.delete()
-                            except QGISServerLayer.DoesNotExist:
-                                pass
-                            out['ogc_backend'] = qgis_server.BACKEND_PACKAGE
-                    except BaseException:
-                        pass
+                    if check_ogc_backend(geoserver.BACKEND_PACKAGE):
+                        # delete geoserver's store before upload
+                        # cascading_delete(gs_catalog, layer.alternate)
+                        out['ogc_backend'] = geoserver.BACKEND_PACKAGE
+                    elif check_ogc_backend(qgis_server.BACKEND_PACKAGE):
+                        try:
+                            qgis_layer = QGISServerLayer.objects.get(
+                                layer=layer)
+                            qgis_layer.delete()
+                        except QGISServerLayer.DoesNotExist:
+                            pass
+                        out['ogc_backend'] = qgis_server.BACKEND_PACKAGE
 
                     saved_layer = file_upload(
                         base_file,
                         title=layer.title,
                         abstract=layer.abstract,
-                        # is_approved=layer.is_approved,
-                        # is_published=layer.is_published,
+                        is_approved=layer.is_approved,
+                        is_published=layer.is_published,
                         name=layer.name,
                         user=layer.owner,
                         # user=request.user,
@@ -1257,7 +1249,7 @@ def layer_replace(request, layername, template='layers/layer_replace.html'):
                     out['url'] = reverse(
                         'layer_detail', args=[
                             saved_layer.service_typename])
-            except Exception as e:
+            except BaseException as e:
                 logger.exception(e)
                 tb = traceback.format_exc()
                 out['success'] = False

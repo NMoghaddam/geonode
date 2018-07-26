@@ -25,6 +25,7 @@ import errno
 from itertools import cycle, izip
 import json
 import logging
+import traceback
 import os
 from os.path import basename, splitext, isfile
 import re
@@ -36,8 +37,7 @@ import base64
 import httplib2
 
 import urllib
-from urlparse import urlparse
-from urlparse import urlsplit
+from urlparse import urlsplit, urlparse, urljoin
 
 from agon_ratings.models import OverallRating
 from bs4 import BeautifulSoup
@@ -241,24 +241,28 @@ def get_sld_for(gs_catalog, layer):
     # GeoServer sometimes fails to associate a style with the data, so
     # for now we default to using a point style.(it works for lines and
     # polygons, hope this doesn't happen for rasters  though)
+    gs_layer = None
     _default_style = None
     try:
         _default_style = layer.default_style
     except BaseException:
+        traceback.print_exc()
         pass
+
     if _default_style is None:
         gs_catalog._cache.clear()
         try:
             gs_layer = gs_catalog.get_layer(layer.name)
             name = gs_layer.default_style.name if gs_layer.default_style is not None else "raster"
         except BaseException:
-            name = "raster"
+            traceback.print_exc()
+            name = None
     else:
         name = _default_style.name
 
     # Detect geometry type if it is a FeatureType
-    if layer.resource and layer.resource.resource_type == 'featureType':
-        res = layer.resource
+    if gs_layer and gs_layer.resource and gs_layer.resource.resource_type == 'featureType':
+        res = gs_layer.resource
         res.fetch()
         ft = res.store.get_resources(res.name)
         ft.fetch()
@@ -435,7 +439,8 @@ def cascading_delete(cat, layer_name):
                 try:
                     logger.info("Trying to delete Style [%s]" % s.name)
                     cat.delete(s, purge='true')
-                    workspace, name = layer_name.split(':')
+                    workspace, name = layer_name.split(':') if ':' in layer_name else \
+                        (settings.DEFAULT_WORKSPACE, layer_name)
                 except FailedRequestError as e:
                     # Trying to delete a shared style will fail
                     # We'll catch the exception and log it.
@@ -928,13 +933,17 @@ def set_styles(layer, gs_catalog):
             # make sure we are not using a defaul SLD (which won't be editable)
             if not default_style.workspace or default_style.workspace != layer.workspace:
                 sld_body = default_style.sld_body
-                gs_catalog.create_style(layer.name, sld_body, raw=True, workspace=layer.workspace)
+                try:
+                    gs_catalog.create_style(layer.name, sld_body, raw=True, workspace=layer.workspace)
+                except BaseException:
+                    pass
                 style = gs_catalog.get_style(layer.name, workspace=layer.workspace)
             else:
                 style = default_style
-            layer.default_style = save_style(style)
-            # FIXME: This should remove styles that are no longer valid
-            style_set.append(layer.default_style)
+            if style:
+                layer.default_style = save_style(style)
+                # FIXME: This should remove styles that are no longer valid
+                style_set.append(layer.default_style)
         try:
             if gs_layer.styles:
                 alt_styles = gs_layer.styles
@@ -1159,10 +1168,14 @@ def _create_db_featurestore(name, data, overwrite=False, charset="UTF-8", worksp
     ds = get_store(cat, dsname, workspace=workspace)
 
     try:
-        cat.add_data_to_store(ds, name, data,
+        cat.add_data_to_store(ds,
+                              name,
+                              data,
                               overwrite=overwrite,
+                              workspace=workspace,
                               charset=charset)
         resource = cat.get_resource(name, store=ds, workspace=workspace)
+        assert resource is not None
         return ds, resource
     except Exception:
         msg = _("An exception occurred loading data to PostGIS")
@@ -1257,15 +1270,14 @@ class OGC_Server(object):
         The Open Web Service url for the server.
         """
         location = self.PUBLIC_LOCATION if self.PUBLIC_LOCATION else self.LOCATION
-        return self.OWS_LOCATION if self.OWS_LOCATION else location + 'ows'
+        return self.OWS_LOCATION if self.OWS_LOCATION else urljoin(location, 'ows')
 
     @property
     def rest(self):
         """
         The REST endpoint for the server.
         """
-        return self.LOCATION + \
-            'rest' if not self.REST_LOCATION else self.REST_LOCATION
+        return urljoin(self.LOCATION, 'rest') if not self.REST_LOCATION else self.REST_LOCATION
 
     @property
     def public_url(self):
@@ -1280,14 +1292,14 @@ class OGC_Server(object):
         The Open Web Service url for the server used by GeoNode internally.
         """
         location = self.LOCATION
-        return location + 'ows'
+        return urljoin(location, 'ows')
 
     @property
     def internal_rest(self):
         """
         The internal REST endpoint for the server.
         """
-        return self.LOCATION + 'rest'
+        return urljoin(self.LOCATION, 'rest')
 
     @property
     def hostname(self):

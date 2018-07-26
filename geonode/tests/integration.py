@@ -443,6 +443,12 @@ class GeoNodeMapTest(GeoNodeLiveTestSupport):
                 uploaded.metadata_xml = thelayer_metadata
                 regions_resolved, regions_unresolved = resolve_regions(regions)
                 self.assertIsNotNone(regions_resolved)
+        except GeoNodeException as e:
+            # layer have projection file, but has no valid srid
+            self.assertEqual(
+                str(e),
+                "Invalid Layers. "
+                "Needs an authoritative SRID in its CRS to be accepted")
         # except:
         #     # Sometimes failes with the message:
         #     # UploadError: Could not save the layer air_runways,
@@ -1157,7 +1163,10 @@ xsi:schemaLocation="http://www.opengis.net/sld http://schemas.opengis.net/sld/1.
 
         # with settings disabled
         with self.settings(RESOURCE_PUBLISHING=True):
-            layer = file_upload(thefile, overwrite=True)
+            layer = file_upload(thefile,
+                                overwrite=True,
+                                is_approved=False,
+                                is_published=False)
             layer.set_default_permissions()
             check_layer(layer)
 
